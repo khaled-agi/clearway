@@ -10,7 +10,30 @@
 
 It is built for the moment *before booking*, when problems are cheap to fix — not after the container is at the port.
 
-![dashboard](docs/screenshot.png)
+![overview](docs/screenshot.png)
+
+## What's inside
+
+| Page | What it does |
+|---|---|
+| **Overview** | What needs your attention first, with the cost of leaving it; where every shipment sits on its journey; next deadlines. |
+| **Shipments** | All shipments, sorted by what needs you first — stage, readiness, open items, cost if not fixed, next deadline. |
+| **Shipment detail** | The journey (8 stages, who owns each), every blocker with *why it matters* and *what it costs if not fixed*, three-way document check, classification, required certificates, landed-cost estimate. Mark items fixed, ask the supplier (English / 中文), share with the broker. |
+| **Products** | One record per product: description, markets, classification, requirements on file, certificates with expiry. Every shipment inherits it. |
+| **Documents** | Every document seen, and whether it agrees with the others on the same shipment. |
+| **Compliance rules** | Each market's requirements in plain language, who provides them, official links, and what each costs when missing. Includes a "check a product" box. |
+| **Partners** | Factories, forwarders, brokers — with a document-quality score and one-click document requests. |
+| **Settings** | Company / IOR details, extraction status, and the editable cost model behind every estimate. |
+
+### The journey
+
+Every shipment moves through the same eight stages: **Product record → Supplier documents → Classification → Compliance → Booking & filings → In transit → Arrival & entry → Released.** A blocker pins the shipment to the stage where it must be fixed, so the overview board shows at a glance where things are stuck and who (factory, importer, forwarder, broker) is up.
+
+### The cost model
+
+Every blocker carries an estimate of what it costs if shipped as-is — exam fees, demurrage per day, broker handling, 10% marking duty for unmarked goods, $5,000 ISF liquidated damages, bonded storage during an agency detention, and the goods value at risk when a product can be refused. Defaults are typical 2025–26 US West Coast figures and are editable in Settings; the assumptions live in `public/rules.js` (`COSTS` and `impact()`).
+
+![shipment](docs/shipment.png)
 
 ## Quick start
 
@@ -42,8 +65,8 @@ New shipment wizard
   └─ readiness score ──▶ dashboard table + risk map + shipment drawer
 ```
 
-- `public/index.html`, `styles.css`, `app.js` — the dashboard, wizard and shipment drawer. Vanilla JS, no build step.
-- `public/rules.js` — the rules engine (classification keywords, regulatory requirements per market, document field comparison). Shared by browser and server.
+- `public/index.html`, `styles.css`, `app.js` — all pages, the new-shipment wizard, and the shipment detail. Vanilla JS, hash-routed, no build step; data persists in the browser (localStorage).
+- `public/rules.js` — the rules engine: requirements catalog per market, classification keywords, journey stages, cost model. Shared by browser and server.
 - `server/server.js` — static file server + `/api/analyze`. Zero dependencies.
 - `samples/` — example documents with known discrepancies.
 
@@ -70,12 +93,13 @@ Returns `{ simulated: false, ex: { inv, pl, bl }, classification: { code, text, 
 | Regulatory checklist | Keyword rules in `rules.js` — a starting point, **not legal advice**. Needs a maintained rules table per market. |
 | HS classification | Claude's suggestion when live; keyword lookup otherwise. Production should call the HTS/TARIC schedule + CBP CROSS / BTI rulings and keep a broker in the loop. |
 | Readiness score, risk map, KPIs | Real, computed from blockers. The dollar exposure is a rough heuristic. |
-| Seed shipments | Demo data in `app.js`. |
+| Seed shipments, products, partners | Demo data in `app.js`; "Restore demo data" in Settings. |
+| Cost estimates | Heuristic ranges from the editable cost model — for prioritisation, not quotes. |
 | Persistence, auth, supplier portal, broker sharing | Not yet — see roadmap. |
 
 ## Roadmap
 
-- [ ] Persist shipments and SKU records (SQLite) so a product is classified once and every shipment inherits it
+- [ ] Server-side persistence (SQLite) and accounts, so suppliers and brokers get real links instead of copy-paste
 - [ ] Supplier intake link (zh-CN) — factory fills in facts once; invoice/packing list/label spec generated from the record
 - [ ] Live tariff data: USITC HTS API, EU TARIC, UK Trade Tariff; CBP CROSS ruling links; per-SKU change alerts
 - [ ] Certificate verification (lab accreditation, report number lookup)
