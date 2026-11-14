@@ -1,0 +1,7 @@
+Document,Packing List
+Invoice ref,CI-LX-2291
+Shipper,Shenzhen Luxin Electronics Co. Ltd
+Consignee,Importer LLC
+Line,Description,Cartons,Pcs per carton,Total pcs,Net weight,Gross weight
+1,Kitchen scale,100,11.5,1150,520 kg,594 kg
+Totals,,100,,1150,520 kg,594 kg

@@ -1,0 +1,13 @@
+Document,Commercial Invoice
+Invoice No,CI-LX-2291
+Date,2026-11-02
+Seller,Shenzhen Luxin Electronics Co. Ltd
+Consignee,Importer LLC
+Incoterm,FOB Yantian
+Currency,USD
+Country of origin,China
+Line,Description,HS Code,Qty (pcs),Unit price,Amount
+1,Smart kitchen scale with LED display (Bluetooth),8423.10.00,1200,9.50,11400.00
+Total cartons,100
+Gross weight,594 kg
+Total,USD 11400.00
