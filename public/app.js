@@ -367,7 +367,7 @@ function pageShipment(id){
   </div>`;
 }
 /* a real Leaflet map when available, the SVG sketch otherwise */
-function mapBlock(key,routes,o){return `<div class="map-wrap"><div class="lmap" id="lmap-${key}" data-routes='${esc(JSON.stringify(routes))}' data-opts='${esc(JSON.stringify({labels:!!o.labels,maxZoom:o.maxZoom||5}))}' style="height:${o.height}px"></div><div class="lmap-fallback" id="lsvg-${key}" hidden>${drawMap(routes,{width:o.width,height:o.svgH})}</div></div>`;}
+function mapBlock(key,routes,o){const st=S.settings.mapStyle||'clean';return `<div class="map-wrap" style="position:relative"><div class="lmap" id="lmap-${key}" data-routes='${esc(JSON.stringify(routes))}' data-opts='${esc(JSON.stringify({labels:!!o.labels,maxZoom:o.maxZoom||5,style:st}))}' style="height:${o.height}px"></div><div class="map-style seg">${(window.MAP_STYLES||[]).map(([k,l])=>`<button class="${st===k?'active':''}" onclick="S.settings.mapStyle='${k}';save();route()">${l}</button>`).join('')}</div><div class="lmap-fallback" id="lsvg-${key}" hidden>${drawMap(routes,{width:o.width,height:o.svgH})}</div></div>`;}
 function mountMaps(root){root.querySelectorAll('.lmap').forEach(el=>{const routes=JSON.parse(el.dataset.routes||'[]'),o=JSON.parse(el.dataset.opts||'{}');const fb=el.nextElementSibling;const fail=()=>{el.hidden=true;if(fb)fb.hidden=false;};
   if(!navigator.onLine){fail();return;}
   const onClick=id=>location.hash='shipment-'+id;

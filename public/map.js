@@ -108,16 +108,21 @@ if(typeof module!=='undefined'&&module.exports)module.exports=api;Object.assign(
 (function(root){
   const PORTS=root.PORTS, gc=root.greatCircle;
   const COL={good:'#0ca30c',warn:'#fab219',crit:'#d03b3b',done:'#898781',plan:'#5b2d86'};
-  const STYLES={liberty:'https://tiles.openfreemap.org/styles/liberty',bright:'https://tiles.openfreemap.org/styles/bright',positron:'https://tiles.openfreemap.org/styles/positron'};
+  const STYLES={clean:'https://tiles.openfreemap.org/styles/positron',streets:'https://tiles.openfreemap.org/styles/liberty',bright:'https://tiles.openfreemap.org/styles/bright',dark:'https://tiles.openfreemap.org/styles/fiord'};
+  root.MAP_STYLES=[['clean','Clean'],['streets','Streets'],['dark','Dark']];
   function mountMaplibre(el,routes,opts){
     opts=opts||{};const ml=root.maplibregl;if(!ml||!el)return false;
     if(el._map){try{el._map.remove();}catch(e){}el._map=null;}
     let failed=false,loaded=false;const fail=()=>{if(failed)return;failed=true;try{map.remove();}catch(e){}el._map=null;opts.onFail&&opts.onFail();};
-    const map=new ml.Map({container:el,style:STYLES[opts.style||'liberty'],center:[20,20],zoom:1.3,minZoom:0.8,renderWorldCopies:true,cooperativeGestures:true,attributionControl:{compact:true}});
+    const map=new ml.Map({container:el,style:STYLES[opts.style]||STYLES.clean,center:[20,20],zoom:1.3,minZoom:0.8,renderWorldCopies:true,attributionControl:{compact:true}});
+    map.scrollZoom.disable(); // page scroll stays page scroll; zoom with the +/- buttons, double-click or pinch
+    map.touchZoomRotate.disableRotation();
     el._map=map;map.addControl(new ml.NavigationControl({showCompass:false}),'top-right');
     const timer=setTimeout(()=>{if(!loaded)fail();},9000);
     map.on('error',e=>{if(!loaded&&e&&e.error&&/style|Failed to fetch|NetworkError|404|403/i.test(String(e.error.message||e.error)))fail();});
     map.on('load',()=>{loaded=true;clearTimeout(timer);
+      // English-first labels: replace the style's bilingual name expressions
+      try{map.getStyle().layers.forEach(l=>{if(l.type!=='symbol')return;const tf=map.getLayoutProperty(l.id,'text-field');if(tf&&JSON.stringify(tf).includes('name'))map.setLayoutProperty(l.id,'text-field',['coalesce',['get','name:en'],['get','name:latin'],['get','name']]);});}catch(e){}
       const lines=[],dots=[],ports=[],seen={};let minLon=Infinity,maxLon=-Infinity,minLat=Infinity,maxLat=-Infinity;const ext=([la,lo])=>{minLon=Math.min(minLon,lo);maxLon=Math.max(maxLon,lo);minLat=Math.min(minLat,la);maxLat=Math.max(maxLat,la);};
       routes.forEach(r=>{const a=PORTS[r.from],b=PORTS[r.to];if(!a||!b)return;const pts=gc([a[2],a[3]],[b[2],b[3]],96);pts.forEach(ext);const c=COL[r.status]||COL.plan;
         lines.push({type:'Feature',properties:{id:r.id,color:c,dash:r.status==='done'?1:0,label:`${r.label||r.id}: ${a[0]} → ${b[0]}`},geometry:{type:'LineString',coordinates:pts.map(p=>[p[1],p[0]])}});

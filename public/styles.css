@@ -252,3 +252,4 @@ a.tile:hover{border-color:#cfcdc4}
 .leaflet-container{font-family:inherit;font-size:12px} .leaflet-tooltip{border-radius:8px;border:1px solid var(--line);box-shadow:var(--shadow);padding:6px 9px;color:var(--ink)} .port-lab{background:rgba(255,255,255,.9);font-weight:500}
 .leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.7)}
 .maplibregl-popup-content{font-family:inherit;font-size:12px;border-radius:8px;box-shadow:var(--shadow);padding:7px 10px}.maplibregl-ctrl-attrib{font-size:10px}
+.map-style{position:absolute;left:28px;top:10px;z-index:2;box-shadow:var(--shadow)}
