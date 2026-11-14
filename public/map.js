@@ -79,9 +79,17 @@ if(typeof module!=='undefined'&&module.exports)module.exports=api;Object.assign(
     opts=opts||{};const L=root.L;if(!L||!el)return false;
     if(el._map){el._map.remove();el._map=null;}
     const map=L.map(el,{worldCopyJump:true,zoomControl:true,attributionControl:true,scrollWheelZoom:false,minZoom:1});el._map=map;
-    const tiles=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,pane:'shadowPane'}).addTo(map);
-    let failed=0;tiles.on('tileerror',()=>{failed++;if(failed>6&&opts.onFail){opts.onFail();}});
+    // Keyless basemaps, tried in order. OSM standard is free under the OSMF tile usage policy (attribution required);
+    // OpenTopoMap and the Wikimedia-style fallback are also keyless. Set window.CLEARWAY_TILES to override.
+    const SOURCES=root.CLEARWAY_TILES||[
+      {url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',attr:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:19},
+      {url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',attr:'&copy; OpenStreetMap contributors, SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',maxZoom:17,subdomains:'abc'},
+      {url:'https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png',attr:'&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; OpenStreetMap contributors',maxZoom:20},
+    ];
+    let si=0,failed=0,tiles=null;
+    const useSource=()=>{if(tiles)map.removeLayer(tiles);const src=SOURCES[si];tiles=L.tileLayer(src.url,{attribution:src.attr,maxZoom:src.maxZoom||18,subdomains:src.subdomains||'abc',crossOrigin:true}).addTo(map);failed=0;
+      tiles.on('tileerror',()=>{failed++;if(failed>4){if(si<SOURCES.length-1){si++;useSource();}else if(opts.onFail)opts.onFail();}});};
+    useSource();
     const bounds=[];const seen={};
     routes.forEach(r=>{const a=PORTS[r.from],b=PORTS[r.to];if(!a||!b)return;const pts=gc([a[2],a[3]],[b[2],b[3]],72);const c=COL[r.status]||COL.plan;
       L.polyline(pts,{color:c,weight:2.2,opacity:.8,dashArray:r.status==='done'?'4 6':null}).addTo(map).bindTooltip(`${r.label||r.id}: ${a[0]} → ${b[0]}`,{sticky:true});
