@@ -369,8 +369,10 @@ function pageShipment(id){
 /* a real Leaflet map when available, the SVG sketch otherwise */
 function mapBlock(key,routes,o){return `<div class="map-wrap"><div class="lmap" id="lmap-${key}" data-routes='${esc(JSON.stringify(routes))}' data-opts='${esc(JSON.stringify({labels:!!o.labels,maxZoom:o.maxZoom||5}))}' style="height:${o.height}px"></div><div class="lmap-fallback" id="lsvg-${key}" hidden>${drawMap(routes,{width:o.width,height:o.svgH})}</div></div>`;}
 function mountMaps(root){root.querySelectorAll('.lmap').forEach(el=>{const routes=JSON.parse(el.dataset.routes||'[]'),o=JSON.parse(el.dataset.opts||'{}');const fb=el.nextElementSibling;const fail=()=>{el.hidden=true;if(fb)fb.hidden=false;};
-  if(!window.L||!navigator.onLine){fail();return;}
-  try{const ok=mountLeaflet(el,routes,{...o,onClick:id=>location.hash='shipment-'+id,onFail:fail});if(!ok)fail();}catch(e){console.warn('map',e);fail();}});}
+  if(!navigator.onLine){fail();return;}
+  const onClick=id=>location.hash='shipment-'+id;
+  const leaflet=()=>{try{if(!window.L||!mountLeaflet(el,routes,{...o,onClick,onFail:fail}))fail();}catch(e){console.warn('leaflet',e);fail();}};
+  try{if(!window.maplibregl||!mountMaplibre(el,routes,{...o,onClick,onFail:leaflet}))leaflet();}catch(e){console.warn('maplibre',e);leaflet();}});}
 function milestones(s){
   const st=stageOf(s);const load=new Date(s.loadDate),eta=new Date(s.eta);const d=(x,n)=>{const y=new Date(x);y.setDate(y.getDate()+n);return y;};
   const items=[['Booking confirmed',d(load,-7),st>=4],['Cargo received at '+portName(polOf(s)),d(load,-2),st>=5],[(s.mode==='Ocean'?'Departed ':'Flown from ')+portName(polOf(s)),load,st>=5],...(s.mode==='Ocean'?[['Transshipment',d(load,Math.round((eta-load)/864e5/2)),st>=5&&progressOf(s)>0.5]]:[]),['Arrived '+portName(podOf(s)),eta,st>=6],['Customs release',d(eta,2),st>=7],['Delivered',d(eta,5),st>=7&&!!s.released]];

@@ -103,3 +103,46 @@ if(typeof module!=='undefined'&&module.exports)module.exports=api;Object.assign(
   }
   root.mountLeaflet=mountLeaflet;root.greatCircle=gc;
 })(typeof globalThis!=='undefined'?globalThis:this);
+
+/* ---------- Primary: MapLibre GL + OpenFreeMap vector tiles (free, keyless, unlimited). ---------- */
+(function(root){
+  const PORTS=root.PORTS, gc=root.greatCircle;
+  const COL={good:'#0ca30c',warn:'#fab219',crit:'#d03b3b',done:'#898781',plan:'#5b2d86'};
+  const STYLES={liberty:'https://tiles.openfreemap.org/styles/liberty',bright:'https://tiles.openfreemap.org/styles/bright',positron:'https://tiles.openfreemap.org/styles/positron'};
+  function mountMaplibre(el,routes,opts){
+    opts=opts||{};const ml=root.maplibregl;if(!ml||!el)return false;
+    if(el._map){try{el._map.remove();}catch(e){}el._map=null;}
+    let failed=false,loaded=false;const fail=()=>{if(failed)return;failed=true;try{map.remove();}catch(e){}el._map=null;opts.onFail&&opts.onFail();};
+    const map=new ml.Map({container:el,style:STYLES[opts.style||'liberty'],center:[20,20],zoom:1.3,minZoom:0.8,renderWorldCopies:true,cooperativeGestures:true,attributionControl:{compact:true}});
+    el._map=map;map.addControl(new ml.NavigationControl({showCompass:false}),'top-right');
+    const timer=setTimeout(()=>{if(!loaded)fail();},9000);
+    map.on('error',e=>{if(!loaded&&e&&e.error&&/style|Failed to fetch|NetworkError|404|403/i.test(String(e.error.message||e.error)))fail();});
+    map.on('load',()=>{loaded=true;clearTimeout(timer);
+      const lines=[],dots=[],ports=[],seen={};let minLon=Infinity,maxLon=-Infinity,minLat=Infinity,maxLat=-Infinity;const ext=([la,lo])=>{minLon=Math.min(minLon,lo);maxLon=Math.max(maxLon,lo);minLat=Math.min(minLat,la);maxLat=Math.max(maxLat,la);};
+      routes.forEach(r=>{const a=PORTS[r.from],b=PORTS[r.to];if(!a||!b)return;const pts=gc([a[2],a[3]],[b[2],b[3]],96);pts.forEach(ext);const c=COL[r.status]||COL.plan;
+        lines.push({type:'Feature',properties:{id:r.id,color:c,dash:r.status==='done'?1:0,label:`${r.label||r.id}: ${a[0]} → ${b[0]}`},geometry:{type:'LineString',coordinates:pts.map(p=>[p[1],p[0]])}});
+        if(r.progress!=null&&r.progress>0&&r.progress<1){const p=pts[Math.round(r.progress*(pts.length-1))];dots.push({type:'Feature',properties:{id:r.id,color:c,label:r.label||r.id,sub:(r.sub||'').replace(/<br>/g,' ')+Math.round(r.progress*100)+'% of the way'},geometry:{type:'Point',coordinates:[p[1],p[0]]}});}
+        [[r.from,a,pts[0]],[r.to,b,pts[pts.length-1]]].forEach(([code,p,pt])=>{if(seen[code])return;seen[code]=1;ports.push({type:'Feature',properties:{name:p[0].replace(/ \(.*\)/,''),full:p[0]+' ('+p[1]+')'},geometry:{type:'Point',coordinates:[pt[1],pt[0]]}});});});
+      map.addSource('routes',{type:'geojson',data:{type:'FeatureCollection',features:lines}});
+      map.addLayer({id:'routes-line',type:'line',source:'routes',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':['get','color'],'line-width':2.4,'line-opacity':.85}});
+      map.addLayer({id:'routes-dash',type:'line',source:'routes',filter:['==',['get','dash'],1],paint:{'line-color':'#fff','line-width':1,'line-dasharray':[2,3],'line-opacity':.9}});
+      map.addSource('ports',{type:'geojson',data:{type:'FeatureCollection',features:ports}});
+      map.addLayer({id:'ports-dot',type:'circle',source:'ports',paint:{'circle-radius':4.5,'circle-color':'#fff','circle-stroke-color':'#0b0b0b','circle-stroke-width':1.5}});
+      map.addLayer({id:'ports-label',type:'symbol',source:'ports',layout:{'text-field':['get','name'],'text-size':11,'text-offset':[0.9,0],'text-anchor':'left','text-font':['Noto Sans Regular'],'text-optional':true},paint:{'text-color':'#2b2b2b','text-halo-color':'#fff','text-halo-width':1.4}});
+      map.addSource('dots',{type:'geojson',data:{type:'FeatureCollection',features:dots}});
+      map.addLayer({id:'dots-glow',type:'circle',source:'dots',paint:{'circle-radius':15,'circle-color':['get','color'],'circle-opacity':.2}});
+      map.addLayer({id:'dots',type:'circle',source:'dots',paint:{'circle-radius':7,'circle-color':['get','color'],'circle-stroke-color':'#fff','circle-stroke-width':2}});
+      const popup=new ml.Popup({closeButton:false,closeOnClick:false,offset:10});
+      map.on('mouseenter','dots',e=>{map.getCanvas().style.cursor='pointer';const f=e.features[0];popup.setLngLat(f.geometry.coordinates).setHTML(`<b>${f.properties.label}</b><br><span style="color:#666">${f.properties.sub}</span>`).addTo(map);});
+      map.on('mouseleave','dots',()=>{map.getCanvas().style.cursor='';popup.remove();});
+      map.on('click','dots',e=>{opts.onClick&&opts.onClick(e.features[0].properties.id);});
+      map.on('mouseenter','routes-line',e=>{map.getCanvas().style.cursor='pointer';popup.setLngLat(e.lngLat).setHTML(e.features[0].properties.label).addTo(map);});
+      map.on('mouseleave','routes-line',()=>{map.getCanvas().style.cursor='';popup.remove();});
+      map.on('mouseenter','ports-dot',e=>{popup.setLngLat(e.features[0].geometry.coordinates).setHTML(e.features[0].properties.full).addTo(map);});
+      map.on('mouseleave','ports-dot',()=>popup.remove());
+      if(isFinite(minLon))map.fitBounds([[minLon,minLat],[maxLon,maxLat]],{padding:{top:36,bottom:30,left:40,right:40},maxZoom:opts.maxZoom||5,duration:0});
+    });
+    return true;
+  }
+  root.mountMaplibre=mountMaplibre;
+})(typeof globalThis!=='undefined'?globalThis:this);
