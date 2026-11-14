@@ -23,7 +23,18 @@ It is built for the moment *before booking*, when problems are cheap to fix — 
 | **Documents** | Every document seen, and whether it agrees with the others on the same shipment. |
 | **Compliance rules** | Each market's requirements in plain language, who provides them, official links, and what each costs when missing. Includes a "check a product" box. |
 | **Partners** | Factories, forwarders, brokers — with a document-quality score and one-click document requests. |
+| **Document pack** (per shipment) | Destination paperwork prefilled from the product record and your settings: commercial invoice, packing list, ISF 10+2 worksheet (US), CBSA B3/CARM data (Canada), EU/UK declaration data, certificate of origin, and a shipper's letter of instruction for the factory. Missing required fields are highlighted. Print or copy. |
+| **Rates & fees** | Freight estimate for the lane (built-in ranges, or live quotes once a rate API key is configured) plus every destination fee (MPF/HMF, ISF, bond, broker, GST/VAT, THC). |
+| **How it works** | The operating model: the problem, the 8-stage journey, who does what, and an honest statement of what the rules cover. |
 | **Settings** | Company / IOR details, extraction status, and the editable cost model behind every estimate. |
+
+### Markets, attributes and rule coverage
+
+Markets: **US, Canada, EU, UK**. Rules fire on **product attributes** (has a radio, contains a battery, for children, touches food, cosmetic, textile, wood, chemical, medical, food, sold to consumers) that are derived from the description and can be corrected on the product page. Every requirement says *why it applies*, who provides it, links to the official agency page, and what it costs when missing. Each product shows a **rule coverage** badge per market — the catalog (50+ rules) is deep for electronics, children's products, food-contact goods and consumer labelling (including Canada's bilingual/Quebec French rules and EU local-language requirements) and a starting point elsewhere. It is a starting point, not legal advice: confirm with a broker.
+
+### Roles
+
+Pick *Importer / Factory / Forwarder / Broker* in the sidebar. The overview shows that role's tasks first; blockers carry an owner; the shipper's letter of instruction and request messages (English / 中文) are how the importer hands work to the factory.
 
 ### The journey
 
@@ -84,6 +95,12 @@ Returns `{ simulated: false, ex: { inv, pl, bl }, classification: { code, text, 
 
 `GET /api/health` → `{ ok, live, model }`
 
+`GET /api/tariff?dest=US&q=kitchen%20scale` / `?dest=UK&code=8423101000` — official lookups via the **USITC HTS REST API** and the **UK Trade Tariff API** (both free, no key). EU TARIC and CBSA have no public JSON API; the response returns the official lookup link.
+
+`GET /api/rates?dest=CA&mode=Ocean&cbm=30&kg=800&value=20000` — freight estimate and destination fee breakdown. Uses built-in lane ranges unless a rate provider key is set in `.env` (`FREIGHTOS_API_KEY`, `MAERSK_CLIENT_ID`/`SECRET`, `FLEXPORT_API_KEY`, `SHIPPO_API_KEY`); adapters are stubs ready to fill in.
+
+`GET /api/integrations` — what is live on this server.
+
 ## What is real and what is a prototype
 
 | Piece | Status |
@@ -101,7 +118,9 @@ Returns `{ simulated: false, ex: { inv, pl, bl }, classification: { code, text, 
 
 - [ ] Server-side persistence (SQLite) and accounts, so suppliers and brokers get real links instead of copy-paste
 - [ ] Supplier intake link (zh-CN) — factory fills in facts once; invoice/packing list/label spec generated from the record
-- [ ] Live tariff data: USITC HTS API, EU TARIC, UK Trade Tariff; CBP CROSS ruling links; per-SKU change alerts
+- [x] Official tariff lookups (USITC, UK Trade Tariff) — [ ] CBP CROSS ruling links, EU/CA data, per-SKU change alerts
+- [ ] Live freight quotes (Freightos WebCargo / Maersk Spot / Flexport adapters)
+- [ ] Broker-reviewed, versioned rules table with per-market coverage targets
 - [ ] Certificate verification (lab accreditation, report number lookup)
 - [ ] Broker/forwarder read-only share links and fix requests
 - [ ] XLSX/DOCX input, multi-page scans

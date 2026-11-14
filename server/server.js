@@ -31,6 +31,9 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, live: !!API_KEY, model: API_KEY ? MODEL : null });
     if (req.method === 'POST' && url.pathname === '/api/analyze') return analyze(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/tariff') return tariff(url, res);
+    if (req.method === 'GET' && url.pathname === '/api/rates') return rates(url, res);
+    if (req.method === 'GET' && url.pathname === '/api/integrations') return json(res, 200, integrationStatus());
     if (req.method === 'GET') return serveStatic(url.pathname, res);
     json(res, 405, { error: 'method not allowed' });
   } catch (e) {
@@ -142,6 +145,85 @@ function extractJson(text) {
   try { return JSON.parse(m[0]); } catch { return null; }
 }
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
+/* ------------------------------------------------------------------
+   Official tariff lookups (free, no key):
+     US  — USITC HTS REST API        https://hts.usitc.gov/reststop/search?keyword=...
+     UK  — UK Trade Tariff API       https://www.trade-tariff.service.gov.uk/api/v2/commodities/{10 digits}
+   EU TARIC and Canada's tariff have no simple public JSON API; we link to the official lookups instead.
+   ------------------------------------------------------------------ */
+async function tariff(url, res) {
+  const dest = (url.searchParams.get('dest') || 'US').toUpperCase();
+  const code = (url.searchParams.get('code') || '').replace(/[^0-9]/g, '');
+  const q = url.searchParams.get('q') || '';
+  try {
+    if (dest === 'US') {
+      const kw = code || q; if (!kw) return json(res, 400, { error: 'code or q required' });
+      const r = await fetch('https://hts.usitc.gov/reststop/search?keyword=' + encodeURIComponent(kw), { headers: { accept: 'application/json' } });
+      if (!r.ok) throw new Error('USITC ' + r.status);
+      const rows = await r.json();
+      const hits = (Array.isArray(rows) ? rows : []).filter(x => x.htsno).slice(0, 12).map(x => ({ code: x.htsno, description: x.description, general: x.general, special: x.special, other: x.other, units: x.units }));
+      return json(res, 200, { dest, source: 'USITC HTS (official)', url: 'https://hts.usitc.gov/?query=' + encodeURIComponent(kw), hits, note: 'Chapter 99 measures (Section 301/232, IEEPA) are additional to the general rate shown.' });
+    }
+    if (dest === 'UK') {
+      if (!code) return json(res, 400, { error: 'a 10-digit code is required for UK lookups' });
+      const r = await fetch(`https://www.trade-tariff.service.gov.uk/api/v2/commodities/${code.padEnd(10, '0').slice(0, 10)}`, { headers: { accept: 'application/json' } });
+      if (!r.ok) throw new Error('UK Trade Tariff ' + r.status);
+      const j = await r.json();
+      const a = j.data && j.data.attributes || {};
+      const measures = (j.included || []).filter(i => i.type === 'measure').length;
+      return json(res, 200, { dest, source: 'UK Trade Tariff (official)', url: `https://www.trade-tariff.service.gov.uk/commodities/${code}`, hits: [{ code: a.goods_nomenclature_item_id, description: a.formatted_description || a.description, general: a.basic_duty_rate ? String(a.basic_duty_rate).replace(/<[^>]+>/g, '') : '', measures }] });
+    }
+    const links = { EU: 'https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=' + code, CA: 'https://www.cbsa-asfc.gc.ca/trade-commerce/tariff-tarif/2026/html/tblmod-eng.html' };
+    return json(res, 200, { dest, source: null, url: links[dest] || null, hits: [], note: 'No public JSON API for this market; open the official lookup.' });
+  } catch (e) {
+    return json(res, 502, { error: String(e.message || e), hint: 'The server could not reach the official tariff site. Check network access.' });
+  }
+}
+
+/* ------------------------------------------------------------------
+   Freight rates: adapters for commercial APIs (need keys) + a built-in lane estimate.
+   Set FREIGHTOS_API_KEY / MAERSK_CLIENT_ID+SECRET / FLEXPORT_API_KEY in .env to enable live quotes.
+   ------------------------------------------------------------------ */
+const LANES = { // very rough 2026 market ranges, USD; replace with live quotes
+  'CN-US': { ocean40: [2800, 4800], ocean20: [2000, 3400], lclCbm: [95, 160], airKg: [4.2, 7.5], expressKg: [6.5, 11], days: { Ocean: 30, Air: 6, Express: 4 }, thc: 650, docs: 120 },
+  'CN-CA': { ocean40: [3000, 5200], ocean20: [2200, 3600], lclCbm: [100, 170], airKg: [4.5, 8], expressKg: [7, 12], days: { Ocean: 32, Air: 6, Express: 4 }, thc: 600, docs: 120 },
+  'CN-EU': { ocean40: [2600, 4600], ocean20: [1900, 3200], lclCbm: [90, 150], airKg: [4.0, 7.0], expressKg: [6, 10.5], days: { Ocean: 38, Air: 6, Express: 4 }, thc: 420, docs: 110 },
+  'CN-UK': { ocean40: [2700, 4700], ocean20: [2000, 3300], lclCbm: [95, 155], airKg: [4.2, 7.2], expressKg: [6.2, 10.8], days: { Ocean: 38, Air: 6, Express: 4 }, thc: 380, docs: 110 },
+};
+function integrationStatus() {
+  return {
+    tariff: { usitc: true, ukTradeTariff: true, taric: 'link-only', cbsa: 'link-only' },
+    rates: {
+      freightos: !!process.env.FREIGHTOS_API_KEY, maersk: !!(process.env.MAERSK_CLIENT_ID && process.env.MAERSK_CLIENT_SECRET), flexport: !!process.env.FLEXPORT_API_KEY, shippo: !!process.env.SHIPPO_API_KEY,
+      builtin: true,
+    },
+    extraction: !!API_KEY,
+  };
+}
+async function rates(url, res) {
+  const dest = (url.searchParams.get('dest') || 'US').toUpperCase(), mode = url.searchParams.get('mode') || 'Ocean';
+  const cbm = Number(url.searchParams.get('cbm')) || 10, kg = Number(url.searchParams.get('kg')) || 600, value = Number(url.searchParams.get('value')) || 10000;
+  const lane = LANES['CN-' + dest] || LANES['CN-US'];
+  // Live adapters would go here; each returns the same shape. None is called without a key.
+  const quotes = [];
+  if (mode === 'Ocean') {
+    if (cbm >= 25) quotes.push({ provider: 'Built-in estimate', service: cbm > 55 ? '40ft FCL' : '20ft FCL', low: cbm > 55 ? lane.ocean40[0] : lane.ocean20[0], high: cbm > 55 ? lane.ocean40[1] : lane.ocean20[1], days: lane.days.Ocean });
+    else quotes.push({ provider: 'Built-in estimate', service: `LCL ${cbm} cbm`, low: Math.round(lane.lclCbm[0] * cbm), high: Math.round(lane.lclCbm[1] * cbm), days: lane.days.Ocean + 5 });
+  } else if (mode === 'Air') quotes.push({ provider: 'Built-in estimate', service: `Air freight ${kg} kg (chargeable)`, low: Math.round(lane.airKg[0] * kg), high: Math.round(lane.airKg[1] * kg), days: lane.days.Air });
+  else quotes.push({ provider: 'Built-in estimate', service: `Express courier ${kg} kg`, low: Math.round(lane.expressKg[0] * kg), high: Math.round(lane.expressKg[1] * kg), days: lane.days.Express });
+  const fees = destinationFees(dest, mode, value, lane);
+  json(res, 200, { dest, mode, quotes, fees, live: Object.entries(integrationStatus().rates).filter(([k, v]) => v === true && k !== 'builtin').map(([k]) => k), note: 'Built-in figures are market ranges for planning. Connect a rate API in .env for bookable quotes.' });
+}
+function destinationFees(dest, mode, value, lane) {
+  const f = [];
+  if (dest === 'US') { f.push(['Merchandise Processing Fee (0.3464%, min $32.71 / max $634.62)', Math.min(Math.max(value * 0.003464, 32.71), 634.62)]); if (mode === 'Ocean') f.push(['Harbor Maintenance Fee (0.125%)', value * 0.00125], ['ISF filing', 45]); f.push(['Customs broker entry', 150], ['Continuous bond (annual, prorated)', 45]); }
+  if (dest === 'CA') { f.push(['Broker release + B3 accounting', 85], ['CARM RPP security (annual, prorated)', 40], ['GST 5% on duty-paid value (recoverable if registered)', value * 0.05]); }
+  if (dest === 'EU') { f.push(['Customs declaration (broker)', 95], ['Import VAT (~19–21%, recoverable if registered)', value * 0.2], ['ICS2 ENS filing', 25]); }
+  if (dest === 'UK') { f.push(['Customs declaration (broker)', 60], ['Import VAT 20% (recoverable if registered)', value * 0.2]); }
+  if (mode === 'Ocean') f.push(['Destination terminal handling (THC)', lane.thc]); f.push(['Documentation / D.O. fee', lane.docs]);
+  return f.map(([label, amount]) => ({ label, amount: Math.round(amount) }));
+}
 
 /* ------------------------------------------------------------------ */
 function serveStatic(pathname, res) {

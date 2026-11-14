@@ -84,6 +84,8 @@ function seed(){
    Derived values
    ===================================================================== */
 const product=s=>S.products.find(p=>p.id===s.productId)||{name:s.sku||'Product',desc:s.desc||'',supplier:s.supplier||'—'};
+/* effective attributes = derived from text, overridden by explicit choices */
+function attrsOf(p){return {...deriveAttrs(p.desc),...(p.attrs||{})};}
 const openB=s=>s.blockers.filter(b=>!b.done);
 function score(s){let sc=100;openB(s).forEach(b=>sc-=b.sev==='crit'?12:5);return Math.max(5,sc);}
 function status(s){const o=openB(s);if(o.some(b=>b.sev==='crit'))return 'crit';return o.length?'warn':'good';}
@@ -112,12 +114,14 @@ function docIssues(s){return openB(s).filter(b=>DOC_KINDS.has(b.kind));}
 /* =====================================================================
    Routing + shell
    ===================================================================== */
-const NAV=[['overview','Overview',icon('home')],['shipments','Shipments',icon('box')],['products','Products',icon('grid')],['documents','Documents',icon('doc')],['rules','Compliance rules',icon('shield')],['partners','Partners',icon('people')],['settings','Settings',icon('gear')]];
-function icon(n){const p={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',doc:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',people:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 2 5 5"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/>'}[n];
+const ROLES=[['Importer','You own the product record and the entry; you decide what ships.'],['Factory','You produce the goods, the documents and the labels.'],['Forwarder','You book the cargo, file ISF/ENS data, issue the BL.'],['Broker','You classify, file the entry and talk to customs.']];
+const NAV=[['overview','Overview',icon('home')],['shipments','Shipments',icon('box')],['products','Products',icon('grid')],['documents','Documents',icon('doc')],['rules','Compliance rules',icon('shield')],['partners','Partners',icon('people')],['rates','Rates & fees',icon('rates')],['how','How it works',icon('help')],['settings','Settings',icon('gear')]];
+function icon(n){const p={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',doc:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',people:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 2 5 5"/>',rates:'<path d="M12 2v20M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 3 5 3 5 1.1 5 3-2.2 3-5 3-5-1.1-5-3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/>'}[n];
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;}
 
 function renderNav(active){
-  $('#nav').innerHTML=NAV.map(([id,label,ic])=>`<a href="#${id}" class="${active===id||(active.startsWith('shipment-')&&id==='shipments')||(active.startsWith('product-')&&id==='products')?'active':''}">${ic}<span>${label}</span></a>`).join('');
+  $('#nav').innerHTML=NAV.map(([id,label,ic])=>`<a href="#${id}" class="${active===id||(active.startsWith('shipment-')&&id==='shipments')||(active.startsWith('product-')&&id==='products')||(active.startsWith('docs-')&&id==='shipments')||(active.startsWith('rates-')&&id==='rates')?'active':''}">${ic}<span>${label}</span></a>`).join('');
+  const role=S.settings.role||'Importer';$('#role').innerHTML=`<div class="role-l">I am the…</div><div class="seg vert">${ROLES.map(r=>`<button class="${role===r[0]?'active':''}" onclick="S.settings.role='${r[0]}';save();route()">${r[0]}</button>`).join('')}</div><div class="muted" style="font-size:11px;margin-top:6px">${esc(ROLES.find(r=>r[0]===role)[1])}</div>`;
 }
 function route(){
   const h=(location.hash||'#overview').slice(1);
@@ -132,6 +136,9 @@ function route(){
   else if(h==='rules')v.innerHTML=pageRules();
   else if(h==='partners')v.innerHTML=pagePartners();
   else if(h==='settings')v.innerHTML=pageSettings();
+  else if(h.startsWith('docs-'))v.innerHTML=pageDocPack(h.slice(5));
+  else if(h.startsWith('rates'))v.innerHTML=pageRates(h.startsWith('rates-')?h.slice(6):null);
+  else if(h==='how')v.innerHTML=pageHow();
   else v.innerHTML=pageOverview();
   bind(v);
 }
@@ -147,6 +154,7 @@ function bind(root){
 /* =====================================================================
    Shared pieces
    ===================================================================== */
+const because=r=>(r.because&&r.because[0]==='applies to every shipment')?'applies to every shipment':'applies because: '+((r.because||[]).join(', ')||'product attributes');
 const pill=(cls,txt)=>`<span class="pill ${cls}">${txt}</span>`;
 function statusPill(s){const [t,c]=STATUS[status(s)];return pill(c,t);}
 function scoreBar(s){const sc=score(s),st=status(s);return `<span class="score"><b class="num">${sc}</b><span class="meter"><i style="width:${sc}%;background:var(--${st})"></i></span></span>`;}
@@ -170,7 +178,9 @@ function pageOverview(){
   const ex=active.map(exposure); const low=ex.reduce((a,e)=>a+e.low,0), high=ex.reduce((a,e)=>a+e.high,0), atRisk=ex.reduce((a,e)=>a+e.atRisk,0);
   const hour=new Date().getHours(); const greet=hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';
   const items=[]; active.forEach(s=>openB(s).forEach(b=>items.push({s,b,i:impact(b.kind,{units:s.units,value:s.value}),dl:nextDeadline(s)})));
+  const role=S.settings.role||'Importer'; const mine=items.filter(x=>x.b.owner.toLowerCase().startsWith(role.toLowerCase())); const showMine=role!=='Importer'&&mine.length;
   items.sort((a,b)=>(a.b.sev==='crit'?0:1)-(b.b.sev==='crit'?0:1)||daysUntil(a.dl.date)-daysUntil(b.dl.date)||b.i.high-a.i.high);
+  mine.sort((a,b)=>(a.b.sev==='crit'?0:1)-(b.b.sev==='crit'?0:1)||daysUntil(a.dl.date)-daysUntil(b.dl.date));
   const lead=blocked.length?`<b>${blocked.length} shipment${blocked.length>1?'s':''} can't book</b> until something is fixed. Shipping everything as-is could cost <b>${money(low)}–${money(high)}</b> in exams, storage and penalties${atRisk?`, with <b>${money(atRisk)}</b> of goods at risk of refusal`:''}.`:
     `Nothing is blocked. ${warn.length?`${warn.length} shipment${warn.length>1?'s':''} ha${warn.length>1?'ve':'s'} items worth fixing before the deadline.`:'All active shipments are ready to book.'}`;
   return `
@@ -189,8 +199,8 @@ function pageOverview(){
 
   <div class="two">
     <section class="card">
-      <div class="card-h"><h2>Needs your attention</h2><span class="hint">${items.length} open items, most urgent first</span></div>
-      ${items.length?`<div class="list">${items.slice(0,8).map(({s,b,i,dl})=>`<div class="li" data-go="shipment-${s.id}">${sevIcon(b.sev)}<div class="li-b"><div class="li-t">${esc(b.title)} <span class="muted">· ${esc(product(s).name)}</span></div><div class="li-s">${esc(b.owner)} to fix · ${dl.label} ${fmtD(dl.date)} (${daysUntil(dl.date)}d)</div></div><div class="li-r"><div class="num">${impactRange(i)}</div><div class="muted">if not fixed</div></div></div>`).join('')}</div>${items.length>8?`<a class="more" href="#shipments">See all ${items.length} →</a>`:''}`:empty('Nothing needs attention','New shipments will show their blockers here.')}
+      <div class="card-h"><h2>${showMine?`Your tasks as ${role}`:'Needs your attention'}</h2><span class="hint">${showMine?`${mine.length} of ${items.length} open items are yours`:items.length+' open items, most urgent first'}</span></div>
+      ${(showMine?mine:items).length?`<div class="list">${(showMine?mine:items).slice(0,8).map(({s,b,i,dl})=>`<div class="li" data-go="shipment-${s.id}">${sevIcon(b.sev)}<div class="li-b"><div class="li-t">${esc(b.title)} <span class="muted">· ${esc(product(s).name)}</span></div><div class="li-s">${esc(b.owner)} to fix · ${dl.label} ${fmtD(dl.date)} (${daysUntil(dl.date)}d)</div></div><div class="li-r"><div class="num">${impactRange(i)}</div><div class="muted">if not fixed</div></div></div>`).join('')}</div>${items.length>8?`<a class="more" href="#shipments">See all ${items.length} →</a>`:''}`:empty('Nothing needs attention','New shipments will show their blockers here.')}
     </section>
     <section class="card">
       <div class="card-h"><h2>Next deadlines</h2></div>
@@ -210,7 +220,7 @@ function pageShipments(){
   return `${pageHead('Shipments',`${S.shipments.length} shipments · sorted by what needs you first`,`<button class="btn primary" data-act="new">+ New shipment</button>`)}
   <div class="toolbar">
     <input class="in" placeholder="Search shipments, products, suppliers" value="${esc(f.q)}" oninput="__f.q=this.value;route()">
-    <select class="in" onchange="__f.dest=this.value;route()"><option value="">All markets</option>${['US','EU','UK'].map(m=>`<option ${f.dest===m?'selected':''}>${m}</option>`).join('')}</select>
+    <select class="in" onchange="__f.dest=this.value;route()"><option value="">All markets</option>${MARKETS.map(([m])=>`<option ${f.dest===m?'selected':''}>${m}</option>`).join('')}</select>
     <select class="in" onchange="__f.st=this.value;route()"><option value="">Any status</option><option value="crit" ${f.st==='crit'?'selected':''}>Blocked</option><option value="warn" ${f.st==='warn'?'selected':''}>Needs attention</option><option value="good" ${f.st==='good'?'selected':''}>Ready</option></select>
     <select class="in" onchange="__f.stage=this.value;route()"><option value="">Any stage</option>${STAGES.map((s,i)=>`<option value="${i}" ${f.stage===String(i)?'selected':''}>${i+1}. ${s.name}</option>`).join('')}</select>
   </div>
@@ -229,7 +239,7 @@ function pageShipment(id){
   const s=S.shipments.find(x=>x.id===id); if(!s)return empty('Shipment not found','',`<a class="btn" href="#shipments">Back to shipments</a>`);
   const p=product(s), st=stageOf(s), stage=STAGES[st], e=exposure(s), ctx={units:s.units,value:s.value};
   const open=openB(s), done=s.blockers.filter(b=>b.done);
-  const reqs=requirementsFor(p.desc,s.dest,s.mode); const have=p.have||{};
+  const reqs=requirementsFor(p,s.dest,s.mode); const have=p.have||{}; const cov=coverage(p,s.dest);
   const dl=nextDeadline(s);
   const cls=s.cls||classify({desc:p.desc,dest:s.dest});
   const duty=s.value*(parseFloat(cls.duty)||0)/100 + (/301/.test(cls.duty)&&s.dest==='US'?s.value*0.25:0);
@@ -238,11 +248,11 @@ function pageShipment(id){
   <div class="page-head">
     <div><h1>${esc(p.name)} <span class="muted" style="font-weight:400;font-size:18px">${s.id}</span></h1>
       <div class="sub">${esc(p.supplier)} · China → ${s.dest} · ${s.mode} · ${s.units.toLocaleString()} units · ${money(s.value)} · ETA ${fmtD(s.eta)}</div></div>
-    <div class="actions">${statusPill(s)} ${scoreBar(s)} <button class="btn" data-act="ask" data-id="${s.id}">Ask supplier to fix</button><button class="btn" data-act="share" data-id="${s.id}">Share with broker</button></div>
+    <div class="actions">${statusPill(s)} ${scoreBar(s)} <a class="btn" href="#docs-${s.id}">Document pack</a><a class="btn" href="#rates-${s.id}">Freight &amp; fees</a><button class="btn" data-act="ask" data-id="${s.id}">Ask supplier to fix</button><button class="btn" data-act="share" data-id="${s.id}">Share with broker</button></div>
   </div>
 
   <section class="card">
-    <div class="card-h"><h2>Journey</h2><span class="hint">Stage ${st+1} of 8 · ${esc(stage.who)} ${st===7?'— done':'is up'}</span></div>
+    <div class="card-h"><h2>Journey</h2><div class="chips"><span class="hint">Stage ${st+1} of 8 · ${esc(stage.who)} ${st===7?'— done':'is up'}</span>${st>0?`<button class="btn sm" data-act="stage" data-id="${s.id}" data-dir="-1">← Move back</button>`:''}${st<7?`<button class="btn sm primary" data-act="stage" data-id="${s.id}" data-dir="1">Advance to ${esc(STAGES[st+1].short)} →</button>`:''}${s.stage!=null?`<button class="btn sm ghost" data-act="stageAuto" data-id="${s.id}" title="Let blockers and dates decide the stage">Auto</button>`:''}</div></div>
     ${stepper(s)}
     <div class="stage-note"><b>${esc(stage.name)}:</b> ${esc(stage.desc)} ${open.length&&st<5?`<span class="crit-ink">${open.filter(b=>b.sev==='crit').length} item${open.filter(b=>b.sev==='crit').length===1?'':'s'} must be fixed before moving on.</span>`:''}${s.notes?`<div class="muted" style="margin-top:4px">${esc(s.notes)}</div>`:''}</div>
   </section>
@@ -278,11 +288,12 @@ function pageShipment(id){
         <div class="card-h"><h2>Classification</h2></div>
         <div class="kv"><span>Code</span><b>${esc(cls.code)} ${pill(cls.conf>=85?'good':cls.conf>=65?'warn':'crit',cls.conf+'%')}</b></div>
         <p class="p">${esc(cls.text)}</p><p class="p muted">${esc(cls.why)}</p>
+        <div class="chips" style="padding-top:10px"><button class="btn sm" data-act="verify" data-id="${s.id}">Verify with official ${s.dest==='US'?'USITC':s.dest==='UK'?'UK Trade Tariff':s.dest==='CA'?'CBSA':'TARIC'} schedule</button></div><div id="verify"></div>
       </section>
 
       <section class="card">
-        <div class="card-h"><h2>Required for ${s.dest}</h2><span class="hint">${reqs.filter(r=>have[r.id]).length}/${reqs.length} on file</span></div>
-        ${reqs.map(r=>{const missingB=open.find(b=>b.reqId===r.id);const ok=have[r.id]&&!missingB;return `<label class="chk"><input type="checkbox" ${ok?'checked':''} data-act="toggleReq" data-p="${p.id}" data-r="${r.id}" data-s="${s.id}"><div><b>${esc(r.name)}</b><small>${esc(r.plain)} <a href="${r.link}" target="_blank" rel="noopener">${esc(r.agency)} ↗</a></small></div></label>`;}).join('')}
+        <div class="card-h"><h2>Required for ${s.dest}</h2><span class="hint">${reqs.filter(r=>have[r.id]).length}/${reqs.length} on file</span></div><div class="cov ${cov.level}">${pill(cov.level==='good'?'good':cov.level==='partial'?'warn':'crit','Rule coverage: '+cov.level)} <span>${esc(cov.note)}</span></div>
+        ${reqs.map(r=>{const missingB=open.find(b=>b.reqId===r.id);const ok=have[r.id]&&!missingB;return `<label class="chk"><input type="checkbox" ${ok?'checked':''} data-act="toggleReq" data-p="${p.id}" data-r="${r.id}" data-s="${s.id}"><div><b>${esc(r.name)}</b><small>${esc(r.plain)} <em>— ${esc(because(r))}</em> · <a href="${r.link}" target="_blank" rel="noopener">${esc(r.agency)} ↗</a></small></div></label>`;}).join('')}
       </section>
 
       <section class="card">
@@ -292,7 +303,7 @@ function pageShipment(id){
           <span class="d">${fmtD(s.loadDate)}</span><span>Loads · ${s.mode==='Ocean'?'Yantian / Ningbo':'SZX / PVG'}</span>
           <span class="d">${fmtD(s.eta)}</span><span>Arrives · entry filed</span>
           <span class="d">${fmtD(new Date(new Date(s.eta).getTime()+4*864e5))}</span><span>Last free day — demurrage starts (${money(COSTS.demurragePerDay)}/day/container)</span>
-        </div>
+        </div>${(s.log||[]).length?`<div class="card-h" style="padding-top:0"><h2 style="font-size:13px">Activity</h2></div><div class="tl">${s.log.slice().reverse().slice(0,8).map(l=>`<span class="d">${fmtD(l.at)}</span><span class="muted">${esc(l.note)}</span>`).join('')}</div>`:''}
       </section>
     </div>
   </div>`;
@@ -321,7 +332,7 @@ function matrix(s){
 
 function pageProducts(){
   return `${pageHead('Products','Describe a product once. Every shipment of it inherits the classification, requirements and certificates.',`<button class="btn primary" data-act="addProduct">+ Add product</button>`)}
-  <div class="cards">${S.products.map(p=>{const ships=S.shipments.filter(s=>s.productId===p.id);const reqs=p.markets.flatMap(m=>requirementsFor(p.desc,m,'Ocean'));const onFile=reqs.filter(r=>(p.have||{})[r.id]).length;const expired=(p.certs||[]).filter(c=>c.status!=='ok').length;
+  <div class="cards">${S.products.map(p=>{const ships=S.shipments.filter(s=>s.productId===p.id);const reqs=p.markets.flatMap(m=>requirementsFor(p,m,'Ocean'));const onFile=reqs.filter(r=>(p.have||{})[r.id]).length;const expired=(p.certs||[]).filter(c=>c.status!=='ok').length;
     return `<a class="pcard" href="#product-${p.id}"><div class="pc-h"><span class="av" style="background:${hue(p.supplier)}">${initials(p.supplier)}</span><div><b>${esc(p.name)}</b><div class="muted">${esc(p.supplier)}</div></div></div><p class="muted">${esc(p.desc)}</p>
     <div class="pc-f"><span>${p.markets.map(m=>pill('neutral',m)).join(' ')}</span><span class="muted">${ships.length} shipment${ships.length===1?'':'s'}</span></div>
     <div class="pc-f"><span>${pill(onFile===reqs.length?'good':onFile>reqs.length/2?'warn':'crit',`${onFile}/${reqs.length} requirements on file`)}</span>${expired?pill('crit',`${expired} certificate issue${expired>1?'s':''}`):''}</div></a>`;}).join('')}</div>`;
@@ -333,14 +344,15 @@ function pageProduct(id){
   ${pageHead(esc(p.name),`${esc(p.supplier)} · ${p.markets.join(', ')}`,`<button class="btn" data-act="new" data-p="${p.id}">New shipment of this product</button>`)}
   <div class="two wide-left"><div>
     <section class="card"><div class="card-h"><h2>Description</h2><button class="btn sm" data-act="editDesc" data-p="${p.id}">Edit</button></div><p class="p">${esc(p.desc)}</p><p class="muted p">This text drives classification and the requirements list. Say what it is made of, what it does, who it is for, and whether it has a battery or radio.</p></section>
-    ${p.markets.map(m=>{const reqs=requirementsFor(p.desc,m,'Ocean');const cls=classify({desc:p.desc,dest:m});return `<section class="card"><div class="card-h"><h2>${m} requirements</h2><span class="hint">${reqs.filter(r=>(p.have||{})[r.id]).length}/${reqs.length} on file</span></div>
+    ${p.markets.map(m=>{const reqs=requirementsFor(p,m,'Ocean');const cls=classify({desc:p.desc,dest:m});const cov=coverage(p,m);return `<section class="card"><div class="card-h"><h2>${m} requirements</h2><span class="hint">${reqs.filter(r=>(p.have||{})[r.id]).length}/${reqs.length} on file</span></div><div class="cov ${cov.level}">${pill(cov.level==='good'?'good':cov.level==='partial'?'warn':'crit','Rule coverage: '+cov.level)} <span>${esc(cov.note)}</span></div>
       <div class="kv"><span>Classification</span><b>${esc(cls.code)} ${pill(cls.conf>=85?'good':'warn',cls.conf+'%')} <span class="muted">${esc(cls.duty)}</span></b></div>
-      ${reqs.map(r=>`<label class="chk"><input type="checkbox" ${(p.have||{})[r.id]?'checked':''} data-act="toggleReq" data-p="${p.id}" data-r="${r.id}"><div><b>${esc(r.name)}</b><small>${esc(r.plain)} · ${esc(r.owner)} · <a href="${r.link}" target="_blank" rel="noopener">${esc(r.agency)} ↗</a> · if missing: ${impactRange(impact(r.kind,{units:1000,value:10000}))}</small></div></label>`).join('')}</section>`;}).join('')}
+      ${reqs.map(r=>`<label class="chk"><input type="checkbox" ${(p.have||{})[r.id]?'checked':''} data-act="toggleReq" data-p="${p.id}" data-r="${r.id}"><div><b>${esc(r.name)}</b><small>${esc(r.plain)} · <em>${esc(because(r))}</em> · ${esc(r.owner)} · <a href="${r.link}" target="_blank" rel="noopener">${esc(r.agency)} ↗</a> · if missing: ${impactRange(impact(r.kind,{units:1000,value:10000}))}</small></div></label>`).join('')}</section>`;}).join('')}
   </div><div>
     <section class="card"><div class="card-h"><h2>Certificates on file</h2><button class="btn sm" data-act="addCert" data-p="${p.id}">+ Add</button></div>
       ${(p.certs||[]).length?(p.certs||[]).map((c,i)=>`<div class="li"><span class="ico ${c.status==='ok'?'good':c.status==='pending'?'warn':'crit'}">${c.status==='ok'?'✓':'!'}</span><div class="li-b"><div class="li-t">${esc(c.name)}</div><div class="li-s">${c.status==='ok'?'Valid':c.status==='pending'?'Requested, not received':c.status==='expired'?'Expired':'Outdated standard'}${c.expires?` · ${c.status==='expired'?'expired':'expires'} ${fmtD(c.expires)}`:''}</div></div><button class="btn sm ghost" data-act="delCert" data-p="${p.id}" data-i="${i}">Remove</button></div>`).join(''):empty('No certificates yet','Upload test reports and declarations so every shipment can reference them.')}
     </section>
-    <section class="card"><div class="card-h"><h2>Markets</h2></div><div class="chips">${['US','EU','UK'].map(m=>`<button class="btn sm ${p.markets.includes(m)?'primary':''}" data-act="toggleMarket" data-p="${p.id}" data-m="${m}">${m}</button>`).join('')}</div></section>
+    <section class="card"><div class="card-h"><h2>Markets</h2></div><div class="chips">${MARKETS.map(([m,name])=>`<button class="btn sm ${p.markets.includes(m)?'primary':''}" data-act="toggleMarket" data-p="${p.id}" data-m="${m}" title="${name}">${m}</button>`).join('')}</div></section>
+    <section class="card"><div class="card-h"><h2>What this product is</h2><span class="hint">drives which rules apply</span></div>${p.category?`<div class="kv"><span>Category</span><b>${esc(p.category)}</b></div>`:''}${ATTRS.map(([k,label])=>{const auto=deriveAttrs(p.desc)[k];const on=(p.attrs&&k in p.attrs)?p.attrs[k]:!!auto;return `<label class="chk"><input type="checkbox" ${on?'checked':''} data-act="toggleAttr" data-p="${p.id}" data-k="${k}"><div><b>${esc(label)}</b>${auto&&!(p.attrs&&k in p.attrs)?'<small>detected from the description</small>':''}</div></label>`;}).join('')}</section>
     <section class="card"><div class="card-h"><h2>Shipments</h2></div>${ships.length?ships.map(s=>`<div class="li" data-go="shipment-${s.id}"><div class="li-b"><div class="li-t">${s.id} · ${s.dest} · ${s.mode}</div><div class="li-s">${STAGES[stageOf(s)].name} · ETA ${fmtD(s.eta)}</div></div>${statusPill(s)}</div>`).join(''):'<div class="muted p">None yet</div>'}</section>
   </div></div>`;
 }
@@ -367,11 +379,11 @@ function pageRules(){
   const check=f.desc?{reqs:requirementsFor(f.desc,f.dest,'Ocean'),cls:classify({desc:f.desc,dest:f.dest})}:null;
   return `${pageHead('Compliance rules','What each market asks for, in plain language, with what it costs to get wrong.')}
   <section class="card checker"><div class="card-h"><h2>Check a product</h2><span class="hint">Describe it like you would to a friend</span></div>
-    <div class="row"><input class="in" style="flex:1" placeholder="e.g. Bluetooth kids headphones with lithium battery" value="${esc(f.desc)}" onchange="__fr.desc=this.value;route()"><select class="in" onchange="__fr.dest=this.value;route()">${['US','EU','UK'].map(m=>`<option ${f.dest===m?'selected':''}>${m}</option>`).join('')}</select><button class="btn primary" onclick="__fr.desc=this.parentElement.querySelector('input').value;route()">Check</button></div>
+    <div class="row"><input class="in" style="flex:1" placeholder="e.g. Bluetooth kids headphones with lithium battery" value="${esc(f.desc)}" onchange="__fr.desc=this.value;route()"><select class="in" onchange="__fr.dest=this.value;route()">${MARKETS.map(([m])=>`<option ${f.dest===m?'selected':''}>${m}</option>`).join('')}</select><button class="btn primary" onclick="__fr.desc=this.parentElement.querySelector('input').value;route()">Check</button></div>
     ${check?`<div class="kv" style="margin-top:12px"><span>Likely classification</span><b>${esc(check.cls.code)} ${pill(check.cls.conf>=85?'good':'warn',check.cls.conf+'%')} <span class="muted">${esc(check.cls.text)} · ${esc(check.cls.duty)}</span></b></div>
       <div class="muted p">${check.reqs.length} requirements for ${f.dest}:</div>${check.reqs.map(r=>ruleRow(r)).join('')}`:''}
   </section>
-  <div class="toolbar"><div class="seg">${['US','EU','UK'].map(m=>`<button class="${f.m===m?'active':''}" onclick="__fr.m='${m}';route()">${m}</button>`).join('')}</div><input class="in" placeholder="Search rules" value="${esc(f.q)}" oninput="__fr.q=this.value;route()"></div>
+  <div class="toolbar"><div class="seg">${MARKETS.map(([m])=>`<button class="${f.m===m?'active':''}" onclick="__fr.m='${m}';route()">${m}</button>`).join('')}</div><input class="in" placeholder="Search rules" value="${esc(f.q)}" oninput="__fr.q=this.value;route()"></div>
   ${Object.entries(grouped).map(([g,rs])=>`<section class="card"><div class="card-h"><h2>${g}</h2><span class="hint">${rs.length}</span></div>${rs.map(r=>ruleRow(r)).join('')}</section>`).join('')}
   <p class="muted p">These are starting-point rules maintained in <code>public/rules.js</code>, not legal advice. Costs use the assumptions in Settings → Cost model. Always confirm with your licensed broker.</p>`;
 }
@@ -394,7 +406,7 @@ function pageSettings(){
       <div class="form"><label>Importer of record (legal name)<input class="in" value="${esc(S.settings.company)}" onchange="S.settings.company=this.value;save()"></label>
       <label>EIN / IRS number (US)<input class="in" value="${esc(S.settings.ein)}" onchange="S.settings.ein=this.value;save()"></label>
       <label>EORI (EU/UK)<input class="in" value="${esc(S.settings.eori)}" onchange="S.settings.eori=this.value;save()"></label>
-      <label>Default market<select class="in" onchange="S.settings.market=this.value;save()">${['US','EU','UK'].map(m=>`<option ${S.settings.market===m?'selected':''}>${m}</option>`).join('')}</select></label></div></section>
+      <label>Default market<select class="in" onchange="S.settings.market=this.value;save()">${MARKETS.map(([m])=>`<option ${S.settings.market===m?'selected':''}>${m}</option>`).join('')}</select></label></div></section>
     <section class="card"><div class="card-h"><h2>Document extraction</h2></div><div id="health" class="p muted">Checking server…</div>
       <p class="p muted">With <code>ANTHROPIC_API_KEY</code> in <code>.env</code>, uploads are read by Claude on your own server. Without it the app simulates extraction so you can still see the flow.</p></section>
     <section class="card"><div class="card-h"><h2>Data</h2></div><div class="chips"><button class="btn" data-act="export">Copy all data as JSON</button><button class="btn" data-act="reset">Restore demo data</button></div><p class="muted p">Everything is stored in this browser only.</p></section>
@@ -409,6 +421,19 @@ function pageSettings(){
    Actions
    ===================================================================== */
 const ACTIONS={
+  stage:(d)=>{const s=S.shipments.find(x=>x.id===d.id);const cur=stageOf(s);const to=Math.max(0,Math.min(7,cur+Number(d.dir)));const crit=openB(s).filter(b=>b.sev==='crit');
+    const go=(note)=>{s.stage=to;s.log=s.log||[];s.log.push({at:new Date().toISOString(),note:note||`Moved from ${STAGES[cur].name} to ${STAGES[to].name}`});save();route();toast(`Now at ${STAGES[to].name}`);};
+    if(to>3&&crit.length&&to>cur)modal('Advance with blockers open?',`<p class="p">${crit.length} blocking item${crit.length>1?'s are':' is'} still open:</p><ul class="p">${crit.map(b=>`<li>${esc(b.title)}</li>`).join('')}</ul><p class="p muted">Moving on means you accept the risk (est. ${money(exposure(s).low)}–${money(exposure(s).high)}). We'll record that you overrode the gate.</p>`,'Advance anyway',()=>go(`Advanced to ${STAGES[to].name} with ${crit.length} blocker${crit.length>1?'s':''} open (override)`));
+    else go();},
+  stageAuto:(d)=>{const s=S.shipments.find(x=>x.id===d.id);delete s.stage;s.log=s.log||[];s.log.push({at:new Date().toISOString(),note:'Stage set back to automatic'});save();route();},
+  toggleAttr:(d,el)=>{const p=S.products.find(x=>x.id===d.p);p.attrs=p.attrs||{};p.attrs[d.k]=!!el.checked;save();route();},
+  verify:async(d,el)=>{const s=S.shipments.find(x=>x.id===d.id);const cls=s.cls||classify({desc:product(s).desc,dest:s.dest});const box=$('#verify');el.disabled=true;box.innerHTML='<div class="p muted" style="padding:0 18px 12px">Looking up the official schedule…</div>';
+    try{const r=await fetch(`/api/tariff?dest=${s.dest}&code=${encodeURIComponent(cls.code)}&q=${encodeURIComponent(product(s).name)}`);const j=await r.json();
+      if(j.error)box.innerHTML=`<div class="p" style="padding:0 18px 12px">${pill('warn','Could not reach')} <span class="muted">${esc(j.error)}. ${esc(j.hint||'')}</span></div>`;
+      else if(!j.hits.length)box.innerHTML=`<div class="p" style="padding:0 18px 12px"><span class="muted">${esc(j.note||'No results')}</span> ${j.url?`<a href="${j.url}" target="_blank" rel="noopener">Open official lookup ↗</a>`:''}</div>`;
+      else box.innerHTML=`<div style="padding:0 18px 12px"><div class="muted" style="font-size:12px;margin:6px 0">Source: ${esc(j.source)} · <a href="${j.url}" target="_blank" rel="noopener">open ↗</a></div><table class="mini" style="width:100%;margin:0"><tbody>${j.hits.slice(0,6).map(h=>`<tr><td><b>${esc(h.code)}</b><div class="muted">${esc(String(h.description||'').replace(/<[^>]+>/g,''))}</div></td><td class="num">${esc(h.general||'')}</td></tr>`).join('')}</tbody></table>${j.note?`<div class="muted" style="font-size:12px;margin-top:6px">${esc(j.note)}</div>`:''}</div>`;}
+    catch(e){box.innerHTML=`<div class="p" style="padding:0 18px 12px">${pill('crit','No server')} <span class="muted">Run with <code>npm start</code> to look up official schedules.</span></div>`;}
+    el.disabled=false;},
   new:(d)=>openWizard(d.p?{productId:d.p}:d.id?{shipmentId:d.id}:{}),
   sample:()=>openWizard({demo:true,productId:'PR1',desc:'Bluetooth-enabled digital kitchen scale with LED display, CR2032 battery included, 1,200 units in 100 cartons',dest:'US',mode:'Ocean',units:1200,value:11400,files:{inv:[{name:'CI-LX-2291.pdf'}],pl:[{name:'PL-LX-2291.xlsx'}],bl:[{name:'Draft-BL-ONEY.pdf'}],certs:[{name:'FCC_Part15_report.pdf'}]}}),
   fixed:(d)=>{const s=S.shipments.find(x=>x.id===d.id);const b=s.blockers.find(x=>x.id===d.b);b.done=true;if(DOC_KINDS.has(b.kind)&&!docIssues(s).length)s.docs={inv:'ok',pl:'ok',bl:'ok'};if(b.reqId){const p=product(s);p.have=p.have||{};p.have[b.reqId]=1;}save();route();toast(`Marked fixed — readiness now ${score(s)}`);},
@@ -422,7 +447,7 @@ const ACTIONS={
   editDesc:(d)=>{const p=S.products.find(x=>x.id===d.p);modal('Edit description',`<textarea class="in" id="mDesc" rows="4">${esc(p.desc)}</textarea><p class="muted p">Changing this re-derives classification and requirements.</p>`,'Save',()=>{p.desc=$('#mDesc').value;save();route();});},
   addCert:(d)=>{const p=S.products.find(x=>x.id===d.p);modal('Add certificate',`<div class="form"><label>Name<input class="in" id="mName" placeholder="e.g. FCC Part 15 test report"></label><label>Status<select class="in" id="mSt"><option value="ok">Valid</option><option value="pending">Requested</option><option value="expired">Expired</option></select></label><label>Expires<input class="in" id="mExp" type="date"></label></div>`,'Add',()=>{p.certs=p.certs||[];p.certs.push({name:$('#mName').value||'Certificate',status:$('#mSt').value,expires:$('#mExp').value?new Date($('#mExp').value).toISOString():null});save();route();});},
   delCert:(d)=>{const p=S.products.find(x=>x.id===d.p);p.certs.splice(+d.i,1);save();route();},
-  addProduct:()=>modal('Add product',`<div class="form"><label>Name<input class="in" id="mName" placeholder="e.g. Kids bamboo dinner set"></label><label>Describe it<textarea class="in" id="mDesc" rows="3" placeholder="What it is made of, what it does, who it is for, battery/radio yes or no"></textarea></label><label>Supplier<input class="in" id="mSup" list="supList" placeholder="Factory name"><datalist id="supList">${S.partners.filter(p=>p.type==='Factory').map(p=>`<option value="${esc(p.name)}">`).join('')}</datalist></label><label>Market<select class="in" id="mMk"><option>US</option><option>EU</option><option>UK</option></select></label></div>`,'Add product',()=>{const p={id:uid('PR'),name:$('#mName').value||'New product',desc:$('#mDesc').value,supplier:$('#mSup').value||'Unassigned supplier',markets:[$('#mMk').value],have:{},certs:[]};S.products.push(p);if(!S.partners.some(x=>x.name===p.supplier))S.partners.push({id:uid('P'),name:p.supplier,type:'Factory',country:'CN',contact:'',lang:'zh'});save();location.hash='product-'+p.id;}),
+  addProduct:()=>modal('Add product',`<div class="form"><label>Name<input class="in" id="mName" placeholder="e.g. Kids bamboo dinner set"></label><label>Category<select class="in" id="mCat">${CATEGORIES.map(c=>`<option>${c[0]}</option>`).join('')}</select></label><label>Describe it<textarea class="in" id="mDesc" rows="3" placeholder="What it is made of, what it does, who it is for, battery/radio yes or no"></textarea></label><div class="muted" style="font-size:12px">You can fine-tune the attributes (radio, children, food contact…) on the product page afterwards.</div><label>Supplier<input class="in" id="mSup" list="supList" placeholder="Factory name"><datalist id="supList">${S.partners.filter(p=>p.type==='Factory').map(p=>`<option value="${esc(p.name)}">`).join('')}</datalist></label><label>Market<select class="in" id="mMk">${MARKETS.map(([m,n])=>`<option value="${m}">${n}</option>`).join('')}</select></label></div>`,'Add product',()=>{const cat=$('#mCat').value;const defaults=(CATEGORIES.find(c=>c[0]===cat)||[,{}])[1];const p={id:uid('PR'),name:$('#mName').value||'New product',category:cat,desc:$('#mDesc').value,supplier:$('#mSup').value||'Unassigned supplier',markets:[$('#mMk').value],have:{},certs:[],attrs:Object.fromEntries(Object.keys(defaults).map(k=>[k,true]))};S.products.push(p);if(!S.partners.some(x=>x.name===p.supplier))S.partners.push({id:uid('P'),name:p.supplier,type:'Factory',country:'CN',contact:'',lang:'zh'});save();location.hash='product-'+p.id;}),
   addPartner:()=>modal('Add partner',`<div class="form"><label>Name<input class="in" id="mName"></label><label>Type<select class="in" id="mT"><option>Factory</option><option>Forwarder</option><option>Broker</option></select></label><label>Country<input class="in" id="mC" value="CN"></label><label>Contact email<input class="in" id="mE"></label></div>`,'Add',()=>{S.partners.push({id:uid('P'),name:$('#mName').value||'Partner',type:$('#mT').value,country:$('#mC').value,contact:$('#mE').value,lang:'en'});save();route();}),
   ask:(d)=>{const s=S.shipments.find(x=>x.id===d.id);const bs=d.b?[s.blockers.find(x=>x.id===d.b)]:openB(s);requestModal(product(s).supplier,s,bs);},
   askPartner:(d)=>{const p=S.partners.find(x=>x.id===d.p);const ships=S.shipments.filter(s=>product(s).supplier===p.name);const bs=ships.flatMap(s=>openB(s).map(b=>({...b,sid:s.id})));requestModal(p.name,ships[0],bs);},
@@ -481,7 +506,7 @@ function renderWiz(){
       <div class="form">
         <label>Product <select class="in" id="wProd"><option value="">New product…</option>${S.products.map(p=>`<option value="${p.id}" ${wiz.productId===p.id?'selected':''}>${esc(p.name)} — ${esc(p.supplier)}</option>`).join('')}</select></label>
         <label>Describe it in plain words <span class="muted">(material, function, who it's for, battery or radio?)</span><textarea class="in" id="wDesc" rows="3" placeholder="e.g. Bluetooth kitchen scale with LED display and a CR2032 battery, 1,200 units in 100 cartons">${esc(wiz.desc)}</textarea></label>
-        <div class="row3"><label>Going to<select class="in" id="wDest">${['US','EU','UK'].map(m=>`<option ${wiz.dest===m?'selected':''}>${m}</option>`).join('')}</select></label><label>By<select class="in" id="wMode">${['Ocean','Air','Express'].map(m=>`<option ${wiz.mode===m?'selected':''}>${m}</option>`).join('')}</select></label><label>Units<input class="in" id="wUnits" type="number" value="${esc(wiz.units)}" placeholder="1200"></label></div>
+        <div class="row3"><label>Going to<select class="in" id="wDest">${MARKETS.map(([m])=>`<option ${wiz.dest===m?'selected':''}>${m}</option>`).join('')}</select></label><label>By<select class="in" id="wMode">${['Ocean','Air','Express'].map(m=>`<option ${wiz.mode===m?'selected':''}>${m}</option>`).join('')}</select></label><label>Units<input class="in" id="wUnits" type="number" value="${esc(wiz.units)}" placeholder="1200"></label></div>
         <div class="row3"><label>Goods value (USD)<input class="in" id="wVal" type="number" value="${esc(wiz.value)}" placeholder="11400"></label><label style="grid-column:span 2">Supplier<input class="in" id="wSup" list="supList2" value="${esc(wiz.supplier)}" placeholder="Factory name"><datalist id="supList2">${S.partners.filter(p=>p.type==='Factory').map(p=>`<option value="${esc(p.name)}">`).join('')}</datalist></label></div>
       </div></div>
       <div><h4>2. Drop the documents you have</h4>
@@ -511,7 +536,7 @@ function renderReview(){
     return `<div class="k">${label}</div>`+['inv','pl','bl'].map(k=>{if(!ex[k])return `<div class="miss"><span class="na">not uploaded</span></div>`;const v=ex[k][f];const req=k==='inv'&&['value','incoterm'].includes(f)&&!v;return `<div class="${bad&&v?'bad':req?'miss':''}"><input data-doc="${k}" data-f="${f}" value="${esc(v||'')}" placeholder="${req?'required':'—'}"></div>`;}).join('');}).join('')}</div>
   <div class="issues">${issues.length?issues.map(b=>`<div class="blk">${sevIcon(b.sev)}<div class="blk-b"><b>${esc(b.title)}</b><p>${esc(b.detail)}</p><div class="fix">→ ${esc(b.fix)}</div></div></div>`).join(''):`<div class="blk"><span class="ico good">✓</span><div><b>Documents agree</b></div></div>`}</div>
   <div class="two" style="margin-top:18px"><div><h4>Classification</h4><div class="blk" style="display:block"><b>${esc(cls.code)} ${pill(cls.conf>=85?'good':'warn',cls.conf+'% confidence')}</b><p>${esc(cls.text)} · est. duty ${esc(cls.duty)}</p><p class="muted">${esc(cls.why)}</p></div></div>
-  <div><h4>Required for ${wiz.dest} <span class="muted">— tick what you already have</span></h4>${reqs.map((r,i)=>`<label class="chk"><input type="checkbox" data-i="${i}" ${r.have?'checked':''}><div><b>${esc(r.name)}</b><small>${esc(r.plain)}</small></div></label>`).join('')}</div></div>`;
+  <div><h4>Required for ${wiz.dest} <span class="muted">— tick what you already have</span></h4>${reqs.map((r,i)=>`<label class="chk"><input type="checkbox" data-i="${i}" ${r.have?'checked':''}><div><b>${esc(r.name)}</b><small>${esc(r.plain)} <em>— ${esc(because(r))}</em></small></div></label>`).join('')}</div></div>`;
 }
 function bindReview(){
   const b=$('#wBody');
@@ -529,7 +554,7 @@ function runExtraction(){
     if(serverResult&&serverResult.ex){wiz.ex=mergeExtraction(serverResult.ex);wiz.cls=serverResult.classification||classify(wiz);apiMode='live';}
     else{wiz.ex=buildExtraction();wiz.cls=classify(wiz);if(apiMode==='unknown')apiMode='simulated';}
     const have=prodHave(); const haveCerts=!!(wiz.files.certs&&wiz.files.certs.length), haveArt=!!(wiz.files.art&&wiz.files.art.length);
-    wiz.reqs=requirementsFor(wiz.desc,wiz.dest,wiz.mode).map(r=>({...r,have:!!have[r.id]||(r.kind==='cert'&&haveCerts&&wiz.demo)||(r.kind.startsWith('label')&&haveArt)||r.kind==='classification'||(r.id==='us-ior'&&!!S.settings.company)}));
+    const wp=S.products.find(x=>x.id===wiz.productId);wiz.reqs=requirementsFor(wp||wiz.desc,wiz.dest,wiz.mode).map(r=>({...r,have:!!have[r.id]||(r.kind==='cert'&&haveCerts&&wiz.demo)||(r.kind.startsWith('label')&&haveArt)||r.kind==='classification'||(r.id==='us-ior'&&!!S.settings.company)}));
     renderWiz();
   };
   const realFiles=Object.values(wiz.files).flat().some(f=>f instanceof Blob);
@@ -593,3 +618,101 @@ route();
   const el=$('#health');if(el)el.innerHTML=window.__health.ok?(window.__health.live?`${pill('good','Live')} Claude reads uploaded documents (${esc(window.__health.model)}).`:`${pill('warn','Simulated')} Server running without an API key.`):`${pill('crit','No server')} Open the app through <code>npm start</code> to enable extraction.`;})();
 document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#modal').classList.remove('open');});
 $('#modal').addEventListener('click',e=>{if(e.target===$('#modal'))$('#modal').classList.remove('open');});
+
+/* =====================================================================
+   Document pack — destination paperwork prefilled from product + shipment
+   ===================================================================== */
+function docField(label,value,required,hint){const miss=required&&(value==null||value==='');return `<tr class="${miss?'miss':''}"><td class="k">${esc(label)}${required?' *':''}</td><td>${miss?'<span class="missing">MISSING</span>':esc(value)}${hint?`<div class="muted">${esc(hint)}</div>`:''}</td></tr>`;}
+function docPack(s){
+  const p=product(s), ex=s.ex||{}, inv=ex.inv||{}, pl=ex.pl||{}, bl=ex.bl||{}, st=S.settings, cls=s.cls||classify({desc:p.desc,dest:s.dest});
+  const sup=S.partners.find(x=>x.name===p.supplier)||{}; const unit=(s.value/s.units)||0; const cartons=inv.cartons||pl.cartons||Math.ceil(s.units/12);
+  const weight=inv.weight||pl.weight||bl.weight||''; const incoterm=inv.incoterm||'FOB (port of loading)'; const consignee=st.company; const idNo=s.dest==='US'?st.ein:st.eori;
+  const idLabel=s.dest==='US'?'EIN / IRS number':s.dest==='CA'?'Business Number (BN15) / CARM':'EORI number';
+  const docs=[];
+  docs.push({id:'ci',title:'Commercial invoice',who:'Factory issues · importer checks',why:'Customs values the shipment from this document. Every other document must agree with it.',
+    rows:[['Seller / exporter',p.supplier,1],['Buyer / consignee',consignee,1],[idLabel+' of importer',idNo,1,'Needed on the invoice for '+s.dest],['Invoice number',inv.number||'',1],['Date',fmtD(new Date()),1],['Incoterm + named place',incoterm,1],['Currency',(inv.value||'USD').split(' ')[0]||'USD',1],
+      ['Line 1 — description (as on product record)',p.name+' — '+p.desc,1,'Use this exact wording on the packing list and BL'],['HS / tariff code',cls.code,1],['Country of origin','China',1],['Quantity (units)',String(s.units),1],['Unit price',unit?unit.toFixed(2):'',1],['Line total / invoice total',money(s.value),1],['Cartons',String(cartons),1],['Gross / net weight',weight,1],
+      ...(s.dest==='US'?[['FDA product code (if FDA-regulated)',(p.have||{})['us-fdacode']?'on file':'' ,attrsOf(p).foodContact||attrsOf(p).cosmetic||attrsOf(p).food,'Required on the invoice for food-contact, cosmetic and food items']]:[]),
+      ...(s.dest==='CA'?[['Canada Customs Invoice (CCI) fields','Required when value > CAD 3,300: purchaser, vendor, country of transhipment, conditions of sale',s.value>2400,'Your broker can complete the CCI from this invoice if these fields are present']]:[]),
+      ...(s.dest==='EU'||s.dest==='UK'?[['Importer EORI on invoice',st.eori,1]]:[]),
+      ['Signature + "I declare the information is true and correct"','',1]]});
+  docs.push({id:'pl',title:'Packing list',who:'Factory issues',why:'Customs uses it to inspect without opening every carton. Counts and weights must match the invoice exactly.',
+    rows:[['Invoice reference',inv.number||'',1],['Shipper',p.supplier,1],['Consignee',consignee,1],['Description (identical to invoice)',p.name,1],['Total cartons',String(cartons),1],['Units per carton / total units',`${Math.round(s.units/cartons)} / ${s.units}`,1],['Gross weight / net weight',weight,1],['Carton dimensions (cm) and total CBM','',1],['Shipping marks',`${consignee.toUpperCase()} · ${s.id} · C/No. 1–${cartons} · MADE IN CHINA`,1,'Print on every carton'],...(s.mode==='Ocean'?[['Container / seal numbers','',0,'Added at stuffing']]:[])]});
+  if(s.dest==='US'&&s.mode==='Ocean')docs.push({id:'isf',title:'ISF 10+2 worksheet (US ocean)',who:'Importer files via broker · 24 h before loading · data mostly from the factory',why:'Late or wrong ISF = $5,000 liquidated damages per violation and a flag for exam.',
+    rows:[['1. Seller (owner of goods)',p.supplier,1],['2. Buyer',consignee,1],['3. Importer of record number (EIN)',st.ein,1],['4. Consignee number',st.ein,1],['5. Manufacturer / supplier name + address',p.supplier+(sup.country?', '+sup.country:''),1],['6. Ship-to party (final delivery address)','',1],['7. Country of origin','China',1],['8. HTSUS number (6-digit minimum)',cls.code,1],['9. Container stuffing location','',1,'Factory or consolidator warehouse address'],['10. Consolidator (stuffer)','',1],['Carrier: vessel stow plan + container status messages','carrier files',0],['Bill of lading number (to link)',bl.number||'',1]]});
+  if(s.dest==='CA')docs.push({id:'b3',title:'Canada release & accounting data (CBSA, B3 / CARM)',who:'Broker files · importer provides',why:'Since CARM, the importer must have a CARM account and security posted; otherwise goods wait at the border until duties are paid in full.',
+    rows:[['Importer Business Number (BN15, RM account)',st.ein,1],['CARM account + Release Prior to Payment security','',1],['Tariff classification (10-digit)',cls.code,1],['Tariff treatment','02 — MFN (China origin)',1],['Country of origin','CN',1],['Value for duty + currency',money(s.value)+' USD',1],['Place of export','China',1],['Mode / cargo control number (from carrier)',bl.number||'',1],['GST 5% on duty-paid value','calculated',0],['Bilingual labelling confirmed on product',(p.have||{})['ca-bilingual']?'yes':'',1,'Required before sale in Canada']]});
+  if(s.dest==='EU')docs.push({id:'sad',title:'EU import declaration data (customs declaration / SAD)',who:'Broker files · importer provides',why:'The declaration pulls together EORI, code, value, origin and VAT treatment. Pre-arrival ENS (ICS2) is separate and filed by the carrier from your data.',
+    rows:[['Importer EORI',st.eori,1],['Procedure code','40 00 (release for free circulation)',1],['CN / TARIC code (10-digit)',cls.code,1],['Customs value (CIF) + currency','invoice value + freight + insurance',1],['Country of origin / dispatch','CN / CN',1],['Preference code','100 (none — China)',1],['VAT: import VAT or IOSS / Article 23 deferment','',1],['GPSR Responsible Person (EU address)',(p.have||{})['eu-gpsr']?'on file':'',1,'Must appear on the product or packaging'],['Packaging EPR registration number (e.g. LUCID)','',0]]});
+  if(s.dest==='UK')docs.push({id:'cds',title:'UK import declaration data (CDS)',who:'Broker files · importer provides',why:'HMRC\'s Customs Declaration Service needs the GB EORI, commodity code and VAT treatment.',
+    rows:[['GB EORI',st.eori,1],['Commodity code (10-digit)',cls.code,1],['Customs value + currency','invoice value + freight + insurance',1],['Country of origin','CN',1],['Procedure code','40 00',1],['Import VAT: postponed VAT accounting?','',1],['UK Responsible Person / UKCA documentation','',attrsOf(p).electrical||attrsOf(p).children]]});
+  docs.push({id:'coo',title:'Certificate of origin (China)',who:'Factory applies at CCPIT / China Customs',why:'Not always mandatory for China-origin goods, but often requested by buyers, banks and for AD/CVD or quota checks.',
+    rows:[['Exporter',p.supplier,1],['Consignee',consignee,1],['Means of transport and route',`${s.mode} · China → ${s.dest}`,1],['Marks and numbers',`${s.id} · C/No. 1–${cartons}`,1],['Description + HS code',`${p.name} · ${cls.code}`,1],['Quantity + weight',`${s.units} units · ${weight}`,1],['Invoice number + date',inv.number||'',1]]});
+  docs.push({id:'sli',title:'Shipper\'s letter of instruction (to the factory)',who:'Importer sends · factory follows',why:'The single most effective way to stop document mismatches: tell the factory exactly what every document must say before they produce them.',
+    rows:[['Use this description on invoice, packing list and BL',p.name,1],['Use this HS code on every document',cls.code,1],['Consignee / notify party exactly as',consignee+(idNo?' · '+idLabel+' '+idNo:''),1],['Incoterm',incoterm,1],['Currency + value must equal the PO','USD · '+money(s.value),1],['Marks on cartons',`${consignee.toUpperCase()} · ${s.id} · MADE IN CHINA`,1],['Labels required on product / packaging',requirementsFor(p,s.dest,s.mode).filter(r=>r.kind.startsWith('label')).map(r=>r.name).join('; ')||'—',1],['Certificates to send with documents',requirementsFor(p,s.dest,s.mode).filter(r=>r.kind==='cert').map(r=>r.name).join('; ')||'—',1],['Deadline for draft documents',fmtD(nextDeadline(s).date),1]]});
+  return docs;
+}
+function pageDocPack(id){
+  const s=S.shipments.find(x=>x.id===id); if(!s)return empty('Shipment not found');
+  const p=product(s); const docs=docPack(s); const missing=docs.reduce((a,d)=>a+d.rows.filter(r=>r[2]&&!r[1]).length,0);
+  return `<a class="back" href="#shipment-${s.id}">← ${esc(p.name)} · ${s.id}</a>
+  ${pageHead('Document pack · '+s.dest,`Everything the destination needs, prefilled from the product record, your settings and the extracted documents. <b>${missing} required field${missing===1?'':'s'} still missing</b> — fill them in Settings or on the product, or send the pack to the factory to complete.`,`<button class="btn" data-act="copyPack" data-id="${s.id}">Copy all as text</button><button class="btn" onclick="window.print()">Print / save PDF</button>`)}
+  <div class="docnav">${docs.map(d=>`<a href="#docs-${s.id}" onclick="event.preventDefault();document.getElementById('d-${d.id}').scrollIntoView({behavior:'smooth'})">${esc(d.title)}</a>`).join('')}</div>
+  ${docs.map(d=>{const miss=d.rows.filter(r=>r[2]&&!r[1]).length;return `<section class="card sheet" id="d-${d.id}"><div class="card-h"><div><h2>${esc(d.title)}</h2><div class="muted" style="font-size:12px">${esc(d.who)}</div></div>${miss?pill('warn',miss+' missing'):pill('good','complete')}</div><p class="p muted" style="padding:0 18px">${esc(d.why)}</p><table class="matrix"><tbody>${d.rows.map(r=>docField(r[0],r[1],r[2],r[3])).join('')}</tbody></table></section>`;}).join('')}
+  <p class="muted p">* required. These are data sheets your broker and factory can work from — they are not the official forms themselves. Your broker files the actual entry.</p>`;
+}
+ACTIONS.copyPack=(d)=>{const s=S.shipments.find(x=>x.id===d.id);const txt=docPack(s).map(doc=>`== ${doc.title} ==\n${doc.who}\n${doc.rows.map(r=>`${r[0]}${r[2]?' *':''}: ${r[1]||'MISSING'}`).join('\n')}`).join('\n\n');copy(txt);};
+
+/* =====================================================================
+   Rates & fees
+   ===================================================================== */
+function pageRates(shipId){
+  const s=shipId?S.shipments.find(x=>x.id===shipId):null; const f=window.__rt||(window.__rt={dest:s?s.dest:S.settings.market,mode:s?s.mode:'Ocean',cbm:s?Math.round(s.units/60):12,kg:s?Math.round(s.units*0.5):600,value:s?s.value:10000});
+  if(s){f.dest=s.dest;f.mode=s.mode;f.value=s.value;}
+  setTimeout(loadRates,0);
+  return `${s?`<a class="back" href="#shipment-${s.id}">← ${esc(product(s).name)} · ${s.id}</a>`:''}
+  ${pageHead('Rates & fees','Freight estimate plus every destination fee and duty, so the landed cost has no surprises.')}
+  <section class="card"><div class="card-h"><h2>Lane</h2><span class="hint">China → destination</span></div>
+    <div class="row" style="padding:0 18px 16px;flex-wrap:wrap"><select class="in" onchange="__rt.dest=this.value;route()">${MARKETS.map(([m,n])=>`<option value="${m}" ${f.dest===m?'selected':''}>${n}</option>`).join('')}</select><select class="in" onchange="__rt.mode=this.value;route()">${['Ocean','Air','Express'].map(m=>`<option ${f.mode===m?'selected':''}>${m}</option>`).join('')}</select><label class="muted" style="font-size:12px">Volume (cbm) <input class="in" style="width:90px" type="number" value="${f.cbm}" onchange="__rt.cbm=+this.value;route()"></label><label class="muted" style="font-size:12px">Weight (kg) <input class="in" style="width:90px" type="number" value="${f.kg}" onchange="__rt.kg=+this.value;route()"></label><label class="muted" style="font-size:12px">Goods value (USD) <input class="in" style="width:110px" type="number" value="${f.value}" onchange="__rt.value=+this.value;route()"></label></div></section>
+  <div class="two"><section class="card" id="ratesOut"><div class="card-h"><h2>Freight</h2></div><div class="p muted" style="padding:0 18px 16px">Loading…</div></section>
+  <section class="card" id="feesOut"><div class="card-h"><h2>Destination fees & duty</h2></div><div class="p muted" style="padding:0 18px 16px">Loading…</div></section></div>
+  <section class="card"><div class="card-h"><h2>Integrations</h2><span class="hint">what is live on your server</span></div><div id="integ" class="p muted" style="padding:0 18px 16px">Checking…</div>
+    <div class="intg">
+      ${[['USITC HTS API','Official US tariff schedule — duty rates by code or keyword','free, no key','usitc'],['UK Trade Tariff API','Official UK commodity codes and duty','free, no key','ukTradeTariff'],['EU TARIC / CBSA Tariff','Official lookups (no public JSON API) — linked','link','taric'],['Freightos WebCargo','Ocean & air spot rates from forwarders','API key','freightos'],['Maersk Spot','Instant bookable ocean rates','client ID + secret','maersk'],['Flexport API','Quotes, bookings, tracking','API key','flexport'],['Shippo / EasyPost','Parcel & express rates','API key','shippo']].map(([n,d,k,id])=>`<div class="li"><div class="li-b"><div class="li-t">${n}</div><div class="li-s">${d}</div></div><span class="pill neutral" id="int-${id}">${k}</span></div>`).join('')}
+    </div><p class="muted p" style="padding:0 18px 16px">Add keys to <code>.env</code> and restart — the rates page switches from the built-in estimate to live quotes automatically. Carrier APIs typically require a commercial agreement.</p></section>`;
+}
+async function loadRates(){
+  const f=window.__rt; const out=$('#ratesOut'), fo=$('#feesOut'), ig=$('#integ'); if(!out)return;
+  try{const r=await fetch(`/api/rates?dest=${f.dest}&mode=${f.mode}&cbm=${f.cbm}&kg=${f.kg}&value=${f.value}`);const j=await r.json();
+    out.innerHTML=`<div class="card-h"><h2>Freight</h2><span class="hint">${j.live.length?'live: '+j.live.join(', '):'built-in estimate'}</span></div>${j.quotes.map(q=>`<div class="li"><div class="li-b"><div class="li-t">${esc(q.service)}</div><div class="li-s">${esc(q.provider)} · ~${q.days} days port to port</div></div><div class="li-r"><div class="num">${money(q.low)}–${money(q.high)}</div></div></div>`).join('')}<p class="muted p" style="padding:0 18px 16px;font-size:12px">${esc(j.note)}</p>`;
+    const total=j.fees.reduce((a,x)=>a+x.amount,0);
+    fo.innerHTML=`<div class="card-h"><h2>Destination fees & duty</h2><span class="hint">${f.dest}</span></div>${j.fees.map(x=>`<div class="kv"><span>${esc(x.label)}</span><b>${money(x.amount)}</b></div>`).join('')}<div class="kv"><span>Duty</span><b>see classification on the shipment</b></div><div class="kv total"><span>Fees excl. duty & freight</span><b>${money(total)}</b></div>`;
+  }catch(e){out.innerHTML=`<div class="card-h"><h2>Freight</h2></div><div class="p" style="padding:0 18px 16px">${pill('crit','No server')} <span class="muted">Run with <code>npm start</code> to get estimates.</span></div>`;fo.innerHTML='';}
+  try{const r=await fetch('/api/integrations');const j=await r.json();ig.textContent='';const set=(id,on,label)=>{const el=$('#int-'+id);if(!el)return;el.className='pill '+(on===true?'good':on==='link-only'?'neutral':'warn');el.textContent=on===true?'live':on==='link-only'?'link':'not connected — '+label;};
+    set('usitc',j.tariff.usitc,'');set('ukTradeTariff',j.tariff.ukTradeTariff,'');set('taric','link-only','');set('freightos',j.rates.freightos,'API key');set('maersk',j.rates.maersk,'credentials');set('flexport',j.rates.flexport,'API key');set('shippo',j.rates.shippo,'API key');}
+  catch(e){ig.textContent='Server not reachable.';}
+}
+
+/* =====================================================================
+   How it works — the operating model
+   ===================================================================== */
+function pageHow(){
+  return `${pageHead('How ClearWay works','The problem, the flow, and who does what. Read this once; the rest of the app follows it.')}
+  <section class="card"><div class="card-h"><h2>The problem we solve</h2></div><div class="prose">
+    <p>Small importers get held at customs for boring reasons: the invoice and packing list disagree, a certificate is missing, a label lacks a required line. The factory that produced the documents never sees the destination's rules; the broker who knows the rules sees the documents only when the container is already on the water. Each hold costs an exam fee, days of storage and — for regulated products — sometimes the goods.</p>
+    <p>ClearWay sits <b>before booking</b>, between the importer and the factory. It turns one product description into a list of what the destination needs, checks the factory's documents against each other and against that list, and puts a price on every gap so people fix the expensive ones first.</p></div></section>
+  <section class="card"><div class="card-h"><h2>Who does what</h2><span class="hint">pick your role in the sidebar to see your tasks first</span></div>
+    <table class="tbl"><thead><tr><th>Role</th><th>Owns</th><th>Uses ClearWay to</th></tr></thead><tbody>
+    <tr><td><b>Importer</b> (ops / founder)</td><td>Product record, the decision to ship, the entry (legally)</td><td>Add products, run the readiness check, send fix requests, share the pack with the broker, approve advancing a stage.</td></tr>
+    <tr><td><b>Factory</b> (export clerk)</td><td>Goods, invoice, packing list, labels, test reports</td><td>Receive the shipper's letter of instruction (EN/中文), upload documents, fix the items assigned to them.</td></tr>
+    <tr><td><b>Forwarder</b></td><td>Booking, BL/AWB, ISF/ENS data transmission, DG declaration</td><td>See the agreed description/HS before cutting the BL; fix weight/HS mismatches; confirm filing deadlines.</td></tr>
+    <tr><td><b>Customs broker</b></td><td>Classification opinion, entry filing, agency correspondence</td><td>Receive a clean, consistent pack; confirm or correct the classification; flag rules we don't cover.</td></tr></tbody></table></section>
+  <section class="card"><div class="card-h"><h2>The journey, and the gate at each stage</h2></div>
+    ${STAGES.map((st,i)=>`<div class="li"><span class="ico ${i<4?'warn':'good'}" style="background:var(--neutral-bg);color:var(--ink-2)">${i+1}</span><div class="li-b"><div class="li-t">${esc(st.name)} <span class="muted">· ${esc(st.who)}</span></div><div class="li-s">${esc(st.desc)}</div></div></div>`).join('')}
+    <p class="p muted" style="padding:0 18px 16px">Stages move automatically: a document problem pins a shipment to <i>Supplier documents</i>; a missing certificate to <i>Compliance</i>; dates move it through transit and entry. You can advance or move back by hand on the shipment page — advancing past an open blocker is recorded as an override.</p></section>
+  <section class="card"><div class="card-h"><h2>What we check — and what we don't yet</h2></div><div class="prose">
+    <p><b>We check:</b> three-way document consistency (invoice / packing list / transport document), required certificates, filings and label elements per market based on the product's attributes, a classification suggestion with rationale, and the cost of each gap.</p>
+    <p><b>Coverage is honest, not complete.</b> The rules catalog (${CATALOG.length} rules across ${MARKETS.map(m=>m[0]).join(', ')}) is deep for electronics, children's products, food-contact goods and general consumer labelling, and a starting point elsewhere. Every product shows a <i>rule coverage</i> badge per market. Sector standards (e.g. specific EN/ASTM test methods, energy labels, chemical limits per material) need a broker or test lab. We never replace them — we make sure they get clean inputs.</p>
+    <p><b>Data sources:</b> USITC HTS and UK Trade Tariff (live, official), CBP CROSS rulings and EU TARIC / CBSA tariff (linked), the agency pages linked on every rule. Freight and fee figures are planning ranges until a rate API is connected.</p></div></section>
+  <section class="card"><div class="card-h"><h2>Where this goes</h2></div><div class="prose"><p>Supplier intake links so the factory fills the product record once (no more retyping); server-side storage and accounts so links are real; broker-reviewed rules with versioning; certificate verification against issuing labs; and per-SKU alerts when a tariff or rule changes.</p></div></section>`;
+}
