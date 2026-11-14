@@ -63,7 +63,7 @@ function seed(){
       mkB('crit','label-rp','GPSR Responsible Person not on label','No EU-established economic operator named on product, packaging or accompanying document.','Appoint an EU RP and add name + address to the packaging.','Importer','eu-gpsr'),
       mkB('warn','cert','CE Declaration references a withdrawn standard','DoC cites EN 62368-1:2014; the harmonised version is now EN IEC 62368-1:2020+A11.','Ask the factory for an updated DoC and test report.','Factory','eu-ce'),
       mkB('warn','registration','WEEE registration missing for Germany','Producer registration required in the destination member state (stiftung ear).','Register or appoint an authorised representative; add the number to the SKU record.','Importer','eu-weee')]),
-    sh('SH-1042','PR4','US','Ocean',2400,16800,-6,24,[],{stage:5,docs:{inv:'ok',pl:'ok',bl:'ok'}}),
+    sh('SH-1042','PR4','US','Ocean',2400,16800,-6,24,[],{stage:5,docs:{inv:'ok',pl:'ok',bl:'ok'},pol:'CNNGB',pod:'USLAX',carrier:'COSCO',vessel:'COSCO SHIPPING ARIES 071E',container:'CSNU6723481'}),
     sh('SH-1058','PR5','US','Ocean',6000,33000,15,42,[
       mkB('warn','label-origin','Origin marking only on removable sleeve','"Made in China" must be permanent and conspicuous on the bottle itself.','Laser-mark the origin on the base.','Factory','us-origin')]),
     sh('SH-1060','PR6','UK','Express',800,4800,3,8,[
@@ -74,13 +74,13 @@ function seed(){
       mkB('crit','cert','EN 71 test reports not provided','Toy Safety Directive requires EN 71-1/-2/-3 and a technical file.','Request from the factory; verify the lab.','Factory','eu-en71'),
       mkB('crit','consignee','Consignee differs','Invoice: "Nordic Play AB"; BL draft: "Nordic Play Logistics AB".','Match the legal entity and EORI across all documents.','Forwarder'),
       mkB('warn','desc','Description inconsistency','"Educational toy" / "wooden blocks" / "puzzle" across three documents.','Use the standard description from the SKU record.','Factory')],{docs:{inv:'mismatch',pl:'mismatch',bl:'mismatch'}}),
-    sh('SH-1066','PR8','US','Ocean',4000,18000,20,48,[]),
+    sh('SH-1066','PR8','US','Ocean',4000,18000,20,48,[],{origin:'VN',pol:'VNSGN',pod:'USLGB'}),
     sh('SH-1069','PR9','US','Air',2000,18400,5,9,[
       mkB('crit','cert','FDA facility registration (MoCRA) not confirmed','The cosmetic manufacturer must be FDA-registered and the product listed.','Collect the FEI number from the factory and list the product.','Factory','us-mocra'),
       mkB('crit','filing','FDA product code missing on invoice','Without it the entry is flagged for manual FDA review.','Add the FDA product code to the invoice.','Broker','us-fdacode'),
       mkB('warn','value','Value differs from proforma','Invoice total $18,400 vs proforma on file $17,900.','Confirm which is the transaction value.','Importer')]),
-    sh('SH-1031','PR8','US','Ocean',4000,18000,-30,-4,[],{stage:7,released:addDays(-1),actual:{exam:false,demurrage:0}}),
-    sh('SH-1036','PR1','US','Ocean',1000,9500,-28,-2,[],{stage:6,notes:'Pulled for x-ray exam; released next day. Cost: $300 exam + 1 day demurrage.',actual:{exam:true,demurrage:1}}),
+    sh('SH-1031','PR8','US','Ocean',4000,18000,-30,-4,[],{stage:7,released:addDays(-1),actual:{exam:false,demurrage:0},origin:'VN',pol:'VNSGN',pod:'USLGB',carrier:'Maersk',vessel:'MAERSK ESSEX 442N',container:'MRKU4418820'}),
+    sh('SH-1036','PR1','US','Ocean',1000,9500,-28,-2,[],{stage:6,carrier:'ONE',vessel:'ONE APUS 042E',container:'ONEU1198230',notes:'Pulled for x-ray exam; released next day. Cost: $300 exam + 1 day demurrage.',actual:{exam:true,demurrage:1}}),
   ];
   return {shipments,products,partners,settings:{company:(S&&S.settings&&S.settings.company)||'Importer LLC',ein:'',eori:'',market:'US',currency:'USD',role:(S&&S.settings&&S.settings.role)||'Importer'},costs:{},onboarding:{sample:true}};
 }
@@ -89,6 +89,15 @@ function seed(){
    Derived values
    ===================================================================== */
 const product=s=>S.products.find(p=>p.id===s.productId)||{name:s.sku||'Product',desc:s.desc||'',supplier:s.supplier||'—'};
+const originOf=s=>s.origin||'CN';
+const originName=s=>COUNTRIES[originOf(s)]||originOf(s);const ON_=originName;
+const polOf=s=>s.pol||defaultOrigin(originOf(s),s.mode);
+const podOf=s=>s.pod||defaultDest(s.dest,s.mode);
+const portName=c=>(PORTS[c]||[c])[0];
+function progressOf(s){const st=stageOf(s);if(st<5)return 0;if(st>=6)return 1;const a=new Date(s.loadDate).getTime(),b=new Date(s.eta).getTime();return Math.min(.95,Math.max(.05,(Date.now()-a)/Math.max(1,b-a)));}
+/* classification text depends on origin: China-specific measures drop for other origins */
+function clsFor(s){const p=product(s);const c={...(s.cls||classify({desc:p.desc,dest:s.dest}))};if(originOf(s)!=='CN'){c.duty=String(c.duty).replace(/\s*\+\s*25% Sec\. 301[^)]*\)?/,'').replace(/\s*\(AD\/CVD check:[^)]*\)/,'').replace(/\s*\+ IEEPA/,'').trim()||'see schedule';}return c;}
+function reqsFor(s){const p=product(s);return requirementsFor(p,s.dest,s.mode).filter(r=>!(r.id==='us-uflpa'&&originOf(s)!=='CN'));}
 /* effective attributes = derived from text, overridden by explicit choices */
 function attrsOf(p){return {...deriveAttrs(p.desc),...(p.attrs||{})};}
 const openB=s=>s.blockers.filter(b=>!b.done);
@@ -158,6 +167,8 @@ function bind(root){
   root.querySelectorAll('[data-go]').forEach(el=>el.onclick=e=>{if(e.target.closest('button,a,input,select'))return;location.hash=el.dataset.go;});
   root.querySelectorAll('[data-act]').forEach(el=>el.onclick=e=>{e.stopPropagation();ACTIONS[el.dataset.act]&&ACTIONS[el.dataset.act](el.dataset,el);});
   root.querySelectorAll('[data-filter]').forEach(el=>el.oninput=()=>route());
+  bindTracking(root);
+  root.querySelectorAll('.rmap .ship').forEach(el=>{el.style.cursor='pointer';el.onclick=()=>location.hash='shipment-'+el.dataset.id;const s=S.shipments.find(x=>x.id===el.dataset.id);if(s){const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=`${product(s).name} · ${s.id} · ${Math.round(progressOf(s)*100)}%`;el.appendChild(t);}});
 }
 
 /* =====================================================================
@@ -185,7 +196,7 @@ function pageWelcome(){
   const ob=S.onboarding||{}; const co=!!S.settings.company;
   return `<div class="welcome">
     <h1>Welcome to ClearWay${ME?', '+esc(ME.email.split('@')[0]):''}</h1>
-    <p class="lead">Before you book a shipment from China, ClearWay checks three things: that your supplier's documents agree with each other, that the destination's certificates and labels are in place, and what it would cost you if they weren't. Three steps to your first check:</p>
+    <p class="lead">Before you book a shipment from overseas, ClearWay checks three things: that your supplier's documents agree with each other, that the destination's certificates and labels are in place, and what it would cost you if they weren't. Three steps to your first check:</p>
     <div class="ob">
       <a class="ob-step ${co?'done':''}" href="#settings"><span class="n">${co?'✓':'1'}</span><div><b>Tell us who the importer is</b><span>Your company name and customs ID (EIN / EORI / BN). It goes on every document.</span></div><span class="go">Settings →</span></a>
       <a class="ob-step" href="#products" onclick="setTimeout(()=>ACTIONS.addProduct(),50)"><span class="n">2</span><div><b>Add your first product</b><span>Describe it in plain words, pick a category. We work out the rules and the tariff code.</span></div><span class="go">Add product →</span></a>
@@ -214,6 +225,12 @@ function pageOverview(){
     <a href="#shipments" class="tile"><div class="l">Ready to book</div><div class="v" style="color:var(--good-ink)">${ready.length}</div><div class="h">documents agree, certificates on file</div></a>
     <div class="tile"><div class="l">Cost if nothing is fixed</div><div class="v">${money(high)}</div><div class="h">${money(low)} best case · ${money(atRisk)} goods at risk</div></div>
   </div>
+
+  <section class="card">
+    <div class="card-h"><h2>On the move</h2><span class="hint">${active.filter(s=>stageOf(s)===5).length} in transit · ${active.filter(s=>stageOf(s)<5).length} not yet departed · click a dot to open</span></div>
+    <div class="map-wrap">${drawMap(S.shipments.filter(s=>stageOf(s)<=6).map(s=>({id:s.id,from:polOf(s),to:podOf(s),progress:progressOf(s),status:stageOf(s)>=6?'done':stageOf(s)>=5?status(s):'plan'})),{width:1100,height:330})}</div>
+    <div class="legend"><span><i class="dot" style="background:#5b2d86"></i>Planned route</span><span><i class="dot" style="background:var(--good)"></i>In transit, ready</span><span><i class="dot" style="background:var(--warn)"></i>In transit, items open</span><span><i class="dot" style="background:var(--crit)"></i>In transit, blocked</span><span><i class="dot" style="background:#898781"></i>Arrived</span></div>
+  </section>
 
   <section class="card">
     <div class="card-h"><h2>Where your shipments are</h2><span class="hint">The journey every shipment takes. Click a shipment to open it.</span></div>
@@ -249,7 +266,7 @@ function pageShipments(){
   </div>
   <section class="card"><table class="tbl"><thead><tr><th>Shipment</th><th>Route</th><th>Stage</th><th>Readiness</th><th>Open items</th><th>Cost if not fixed</th><th>Next deadline</th></tr></thead><tbody>
   ${list.map(s=>{const dl=nextDeadline(s),e=exposure(s),st=stageOf(s);return `<tr data-go="shipment-${s.id}"><td><div class="brand"><span class="av" style="background:${hue(product(s).supplier)}">${initials(product(s).supplier)}</span><div><div class="n">${esc(product(s).name)}</div><div class="m">${s.id} · ${esc(product(s).supplier)}</div></div></div></td>
-    <td>CN → ${s.dest} <span class="muted">· ${s.mode} · ${s.units.toLocaleString()} units</span></td>
+    <td>${originOf(s)} → ${s.dest} <span class="muted">· ${s.mode} · ${s.units.toLocaleString()} units</span></td>
     <td><span class="stage-chip s${st}">${st+1}. ${STAGES[st].short}</span></td>
     <td>${scoreBar(s)} ${statusPill(s)}</td>
     <td>${openB(s).length?`<b>${openB(s).filter(b=>b.sev==='crit').length}</b> blocking · ${openB(s).filter(b=>b.sev!=='crit').length} to review`:'<span class="muted">none</span>'}</td>
@@ -262,15 +279,15 @@ function pageShipment(id){
   const s=S.shipments.find(x=>x.id===id); if(!s)return empty('Shipment not found','',`<a class="btn" href="#shipments">Back to shipments</a>`);
   const p=product(s), st=stageOf(s), stage=STAGES[st], e=exposure(s), ctx={units:s.units,value:s.value};
   const open=openB(s), done=s.blockers.filter(b=>b.done);
-  const reqs=requirementsFor(p,s.dest,s.mode); const have=p.have||{}; const cov=coverage(p,s.dest);
+  const reqs=reqsFor(s); const have=p.have||{}; const cov=coverage(p,s.dest);
   const dl=nextDeadline(s);
-  const cls=s.cls||classify({desc:p.desc,dest:s.dest});
+  const cls=clsFor(s);
   const duty=s.value*(parseFloat(cls.duty)||0)/100 + (/301/.test(cls.duty)&&s.dest==='US'?s.value*0.25:0);
   return `
   <a class="back" href="#shipments">← Shipments</a>
   <div class="page-head">
     <div><h1>${esc(p.name)} <span class="muted" style="font-weight:400;font-size:18px">${s.id}</span></h1>
-      <div class="sub">${esc(p.supplier)} · China → ${s.dest} · ${s.mode} · ${s.units.toLocaleString()} units · ${money(s.value)} · ETA ${fmtD(s.eta)}</div></div>
+      <div class="sub">${esc(p.supplier)} · ${esc(portName(polOf(s)))}, ${esc(originName(s))} → ${esc(portName(podOf(s)))} · ${s.mode} · ${s.units.toLocaleString()} units · ${money(s.value)} · ETA ${fmtD(s.eta)}</div></div>
     <div class="actions">${statusPill(s)} ${scoreBar(s)} <a class="btn" href="#docs-${s.id}">Document pack</a><a class="btn" href="#rates-${s.id}">Freight &amp; fees</a><button class="btn" data-act="ask" data-id="${s.id}">Ask supplier to fix</button><button class="btn" data-act="share" data-id="${s.id}">Share with broker</button></div>
   </div>
 
@@ -286,6 +303,23 @@ function pageShipment(id){
         <div class="card-h"><h2>What's stopping this shipment</h2><span class="hint">${open.length} open · ${done.length} fixed</span></div>
         ${open.length?open.map(b=>blockerCard(s,b,ctx)).join(''):empty('No open blockers','Documents agree, required certificates are on file, labels meet the destination rules.')}
         ${done.length?`<details class="done-list"><summary>${done.length} fixed</summary>${done.map(b=>`<div class="blk done"><span class="ico good">✓</span><div><b>${esc(b.title)}</b><p>${esc(b.fix)}</p></div><button class="btn sm ghost" data-act="undo" data-id="${s.id}" data-b="${b.id}">Undo</button></div>`).join('')}</details>`:''}
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h2>Tracking</h2><span class="hint">${st>=5?(st>=6?'arrived':'in transit · '+Math.round(progressOf(s)*100)+'% of the way'):'not yet departed'}</span></div>
+        <div class="map-wrap">${drawMap([{id:s.id,from:polOf(s),to:podOf(s),progress:progressOf(s),status:st>=6?'done':st>=5?status(s):'plan'}],{width:900,height:300})}</div>
+        <div class="track">
+          <div class="ms">${milestones(s).map(m=>`<div class="m ${m.state}"><span class="md"></span><div><b>${esc(m.name)}</b><span>${m.when?fmtD(m.when):'—'}${m.note?' · '+esc(m.note):''}</span></div></div>`).join('')}</div>
+          <div class="trk-form">
+            <label>Origin country<select class="in" data-trk="origin">${Object.entries(COUNTRIES).map(([c,n])=>`<option value="${c}" ${originOf(s)===c?'selected':''}>${n}</option>`).join('')}</select></label>
+            <label>${s.mode==='Ocean'?'Port of loading':'Origin airport'}<select class="in" data-trk="pol">${portsFor(originOf(s),s.mode).map(([c,n])=>`<option value="${c}" ${polOf(s)===c?'selected':''}>${n}</option>`).join('')||`<option>${esc(portName(polOf(s)))}</option>`}</select></label>
+            <label>${s.mode==='Ocean'?'Port of discharge':'Destination airport'}<select class="in" data-trk="pod">${portsForMarket(s.dest,s.mode).map(([c,n])=>`<option value="${c}" ${podOf(s)===c?'selected':''}>${n}</option>`).join('')}</select></label>
+            <label>Carrier<input class="in" data-trk="carrier" value="${esc(s.carrier||'')}" placeholder="${s.mode==='Ocean'?'e.g. ONE, Maersk, COSCO':'e.g. Cathay Cargo, DHL'}"></label>
+            <label>${s.mode==='Ocean'?'Vessel / voyage':'Flight'}<input class="in" data-trk="vessel" value="${esc(s.vessel||'')}" placeholder="${s.mode==='Ocean'?'e.g. ONE APUS 042E':'e.g. CX 086'}"></label>
+            <label>${s.mode==='Ocean'?'Container / BL no.':'AWB no.'}<input class="in" data-trk="container" value="${esc(s.container||'')}" placeholder="${s.mode==='Ocean'?'e.g. ONEU1234567':'e.g. 160-12345675'}"></label>
+            <div class="chips">${s.container?`<a class="btn sm" target="_blank" rel="noopener" href="https://www.searates.com/container/tracking/?container=${encodeURIComponent(s.container)}">Track on carrier ↗</a>`:'<span class="muted" style="font-size:12px">Add the container / AWB number to get a tracking link.</span>'}</div>
+          </div>
+        </div>
       </section>
 
       <section class="card">
@@ -309,7 +343,7 @@ function pageShipment(id){
 
       <section class="card">
         <div class="card-h"><h2>Classification</h2></div>
-        <div class="kv"><span>Code</span><b>${esc(cls.code)} ${pill(cls.conf>=85?'good':cls.conf>=65?'warn':'crit',cls.conf+'%')}</b></div>
+        <div class="kv"><span>Code</span><b>${esc(cls.code)} ${pill(cls.conf>=85?'good':cls.conf>=65?'warn':'crit',cls.conf+'%')}</b></div><div class="kv"><span>Duty · origin ${esc(ON_(s))}</span><b>${esc(cls.duty)}</b></div>
         <p class="p">${esc(cls.text)}</p><p class="p muted">${esc(cls.why)}</p>
         <div class="chips" style="padding-top:10px"><button class="btn sm" data-act="verify" data-id="${s.id}">Verify with official ${s.dest==='US'?'USITC':s.dest==='UK'?'UK Trade Tariff':s.dest==='CA'?'CBSA':'TARIC'} schedule</button></div><div id="verify"></div>
       </section>
@@ -323,14 +357,20 @@ function pageShipment(id){
         <div class="card-h"><h2>Dates</h2></div>
         <div class="tl">
           <span class="d">${fmtD(dl.date)}</span><span class="${daysUntil(dl.date)<=3&&st<5?'due':''}">${dl.label}</span>
-          <span class="d">${fmtD(s.loadDate)}</span><span>Loads · ${s.mode==='Ocean'?'Yantian / Ningbo':'SZX / PVG'}</span>
-          <span class="d">${fmtD(s.eta)}</span><span>Arrives · entry filed</span>
+          <span class="d">${fmtD(s.loadDate)}</span><span>Loads · ${esc(portName(polOf(s)))}</span>
+          <span class="d">${fmtD(s.eta)}</span><span>Arrives ${esc(portName(podOf(s)))} · entry filed</span>
           <span class="d">${fmtD(new Date(new Date(s.eta).getTime()+4*864e5))}</span><span>Last free day — demurrage starts (${money(COSTS.demurragePerDay)}/day/container)</span>
         </div>${(s.log||[]).length?`<div class="card-h" style="padding-top:0"><h2 style="font-size:13px">Activity</h2></div><div class="tl">${s.log.slice().reverse().slice(0,8).map(l=>`<span class="d">${fmtD(l.at)}</span><span class="muted">${esc(l.note)}</span>`).join('')}</div>`:''}
       </section>
     </div>
   </div>`;
 }
+function milestones(s){
+  const st=stageOf(s);const load=new Date(s.loadDate),eta=new Date(s.eta);const d=(x,n)=>{const y=new Date(x);y.setDate(y.getDate()+n);return y;};
+  const items=[['Booking confirmed',d(load,-7),st>=4],['Cargo received at '+portName(polOf(s)),d(load,-2),st>=5],[(s.mode==='Ocean'?'Departed ':'Flown from ')+portName(polOf(s)),load,st>=5],...(s.mode==='Ocean'?[['Transshipment',d(load,Math.round((eta-load)/864e5/2)),st>=5&&progressOf(s)>0.5]]:[]),['Arrived '+portName(podOf(s)),eta,st>=6],['Customs release',d(eta,2),st>=7],['Delivered',d(eta,5),st>=7&&!!s.released]];
+  let currentSet=false;return items.map(([name,when,done])=>{let state=done?'done':'todo';if(!done&&!currentSet){state='current';currentSet=true;}return {name,when,state,note:name.startsWith('Departed')&&s.vessel?s.vessel:''};});
+}
+function bindTracking(root){root.querySelectorAll('[data-trk]').forEach(el=>el.onchange=()=>{const id=location.hash.slice(10);const s=S.shipments.find(x=>x.id===id);if(!s)return;const k=el.dataset.trk;s[k]=el.value;if(k==='origin'){delete s.pol;}save();route();});}
 function blockerCard(s,b,ctx){
   const i=impact(b.kind,ctx);
   return `<div class="blk">${sevIcon(b.sev)}<div class="blk-b">
@@ -478,7 +518,7 @@ const ACTIONS={
   addPartner:()=>modal('Add partner',`<div class="form"><label>Name<input class="in" id="mName"></label><label>Type<select class="in" id="mT"><option>Factory</option><option>Forwarder</option><option>Broker</option></select></label><label>Country<input class="in" id="mC" value="CN"></label><label>Contact email<input class="in" id="mE"></label></div>`,'Add',()=>{S.partners.push({id:uid('P'),name:$('#mName').value||'Partner',type:$('#mT').value,country:$('#mC').value,contact:$('#mE').value,lang:'en'});save();route();}),
   ask:(d)=>{const s=S.shipments.find(x=>x.id===d.id);const bs=d.b?[s.blockers.find(x=>x.id===d.b)]:openB(s);requestModal(product(s).supplier,s,bs);},
   askPartner:(d)=>{const p=S.partners.find(x=>x.id===d.p);const ships=S.shipments.filter(s=>product(s).supplier===p.name);const bs=ships.flatMap(s=>openB(s).map(b=>({...b,sid:s.id})));requestModal(p.name,ships[0],bs);},
-  share:(d)=>{const s=S.shipments.find(x=>x.id===d.id);const txt=`ClearWay readiness — ${product(s).name} (${s.id})\nChina → ${s.dest} · ${s.mode} · ETA ${fmtD(s.eta)}\nReadiness ${score(s)} — ${STATUS[status(s)][0]}\n\nOpen items:\n${openB(s).map(b=>`- [${b.sev==='crit'?'BLOCKING':'review'}] ${b.title} — ${b.fix} (${b.owner})`).join('\n')||'none'}\n\nClassification: ${(s.cls||classify({desc:product(s).desc,dest:s.dest})).code}`;modal('Share with broker',`<p class="muted p">Copy and paste into an email to your broker. (Read-only links come with accounts.)</p><textarea class="in" rows="10" id="mTxt">${esc(txt)}</textarea>`,'Copy',()=>copy($('#mTxt').value));},
+  share:(d)=>{const s=S.shipments.find(x=>x.id===d.id);const txt=`ClearWay readiness — ${product(s).name} (${s.id})\n${originName(s)} → ${s.dest} · ${s.mode} · ETA ${fmtD(s.eta)}\nReadiness ${score(s)} — ${STATUS[status(s)][0]}\n\nOpen items:\n${openB(s).map(b=>`- [${b.sev==='crit'?'BLOCKING':'review'}] ${b.title} — ${b.fix} (${b.owner})`).join('\n')||'none'}\n\nClassification: ${(s.cls||classify({desc:product(s).desc,dest:s.dest})).code}`;modal('Share with broker',`<p class="muted p">Copy and paste into an email to your broker. (Read-only links come with accounts.)</p><textarea class="in" rows="10" id="mTxt">${esc(txt)}</textarea>`,'Copy',()=>copy($('#mTxt').value));},
   export:()=>copy(JSON.stringify(S,null,2)),
   reset:()=>{if(S.shipments.length||S.products.length)modal('Load sample data?','<p class="p">This replaces what is currently in the workspace with nine example shipments.</p>','Load',reset);else reset();},
   clearAll:()=>modal('Clear the workspace?','<p class="p">Removes all shipments, products and partners. Your company settings are kept.</p>','Clear',clearAll),
@@ -536,14 +576,15 @@ function renderWiz(){
       <div class="form">
         <label>Product <select class="in" id="wProd"><option value="">New product…</option>${S.products.map(p=>`<option value="${p.id}" ${wiz.productId===p.id?'selected':''}>${esc(p.name)} — ${esc(p.supplier)}</option>`).join('')}</select></label>
         <label>Describe it in plain words <span class="muted">(material, function, who it's for, battery or radio?)</span><textarea class="in" id="wDesc" rows="3" placeholder="e.g. Bluetooth kitchen scale with LED display and a CR2032 battery, 1,200 units in 100 cartons">${esc(wiz.desc)}</textarea></label>
-        <div class="row3"><label>Going to<select class="in" id="wDest">${MARKETS.map(([m])=>`<option ${wiz.dest===m?'selected':''}>${m}</option>`).join('')}</select></label><label>By<select class="in" id="wMode">${['Ocean','Air','Express'].map(m=>`<option ${wiz.mode===m?'selected':''}>${m}</option>`).join('')}</select></label><label>Units<input class="in" id="wUnits" type="number" value="${esc(wiz.units)}" placeholder="1200"></label></div>
+        <div class="row3"><label>Shipping from<select class="in" id="wOrigin">${Object.entries(COUNTRIES).map(([c,n])=>`<option value="${c}" ${(wiz.origin||'CN')===c?'selected':''}>${n}</option>`).join('')}</select></label><label>Going to<select class="in" id="wDest">${MARKETS.map(([m])=>`<option ${wiz.dest===m?'selected':''}>${m}</option>`).join('')}</select></label><label>By<select class="in" id="wMode">${['Ocean','Air','Express'].map(m=>`<option ${wiz.mode===m?'selected':''}>${m}</option>`).join('')}</select></label></div>
+        <div class="row3"><label>Units<input class="in" id="wUnits" type="number" value="${esc(wiz.units)}" placeholder="1200"></label>
         <div class="row3"><label>Goods value (USD)<input class="in" id="wVal" type="number" value="${esc(wiz.value)}" placeholder="11400"></label><label style="grid-column:span 2">Supplier<input class="in" id="wSup" list="supList2" value="${esc(wiz.supplier)}" placeholder="Factory name"><datalist id="supList2">${S.partners.filter(p=>p.type==='Factory').map(p=>`<option value="${esc(p.name)}">`).join('')}</datalist></label></div>
       </div></div>
       <div><h4>2. Drop the documents you have</h4>
       <div class="drops">${[...DOCS,...OPT].map(([k,t,h],i)=>`<div class="drop ${i>2?'opt':''} ${wiz.files[k]?'has':''}"><input type="file" multiple data-k="${k}" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.txt"><div class="t">${t}${i>2?' <span class="muted">optional</span>':''}</div><div class="h">${wiz.files[k]?`<span class="f">${wiz.files[k].map(f=>esc(f.name)).join(', ')}</span>`:h}</div></div>`).join('')}</div>
       <p class="muted" style="font-size:12px;margin:10px 0 0">${wiz.demo?'Sample mode: documents are simulated.':'Sent to your own ClearWay server for reading. PDF, images, CSV/TXT.'}</p></div></div>`;
     $('#wProd').onchange=e=>{const p=S.products.find(x=>x.id===e.target.value);wiz.productId=e.target.value;if(p){wiz.desc=p.desc;wiz.supplier=p.supplier;wiz.dest=p.markets[0]||wiz.dest;renderWiz();}};
-    $('#wDesc').oninput=e=>wiz.desc=e.target.value;$('#wDest').onchange=e=>wiz.dest=e.target.value;$('#wMode').onchange=e=>wiz.mode=e.target.value;$('#wUnits').oninput=e=>wiz.units=e.target.value;$('#wVal').oninput=e=>wiz.value=e.target.value;$('#wSup').oninput=e=>wiz.supplier=e.target.value;
+    $('#wDesc').oninput=e=>wiz.desc=e.target.value;$('#wOrigin').onchange=e=>wiz.origin=e.target.value;$('#wDest').onchange=e=>wiz.dest=e.target.value;$('#wMode').onchange=e=>wiz.mode=e.target.value;$('#wUnits').oninput=e=>wiz.units=e.target.value;$('#wVal').oninput=e=>wiz.value=e.target.value;$('#wSup').oninput=e=>wiz.supplier=e.target.value;
     b.querySelectorAll('.drop input').forEach(inp=>{inp.onchange=e=>{wiz.files[inp.dataset.k]=[...e.target.files];renderWiz();};const d=inp.parentElement;d.ondragover=e=>{e.preventDefault();d.classList.add('over');};d.ondragleave=()=>d.classList.remove('over');d.ondrop=e=>{e.preventDefault();d.classList.remove('over');wiz.files[inp.dataset.k]=[...e.dataTransfer.files];renderWiz();};});
   }
   if(wiz.step===1){
@@ -584,7 +625,7 @@ function runExtraction(){
     if(serverResult&&serverResult.ex){wiz.ex=mergeExtraction(serverResult.ex);wiz.cls=serverResult.classification||classify(wiz);apiMode='live';}
     else{wiz.ex=buildExtraction();wiz.cls=classify(wiz);if(apiMode==='unknown')apiMode='simulated';}
     const have=prodHave(); const haveCerts=!!(wiz.files.certs&&wiz.files.certs.length), haveArt=!!(wiz.files.art&&wiz.files.art.length);
-    const wp=S.products.find(x=>x.id===wiz.productId);wiz.reqs=requirementsFor(wp||wiz.desc,wiz.dest,wiz.mode).map(r=>({...r,have:!!have[r.id]||(r.kind==='cert'&&haveCerts&&wiz.demo)||(r.kind.startsWith('label')&&haveArt)||r.kind==='classification'||(r.id==='us-ior'&&!!S.settings.company)}));
+    const wp=S.products.find(x=>x.id===wiz.productId);wiz.reqs=requirementsFor(wp||wiz.desc,wiz.dest,wiz.mode).filter(r=>!(r.id==='us-uflpa'&&(wiz.origin||'CN')!=='CN')).map(r=>({...r,have:!!have[r.id]||(r.kind==='cert'&&haveCerts&&wiz.demo)||(r.kind.startsWith('label')&&haveArt)||r.kind==='classification'||(r.id==='us-ior'&&!!S.settings.company)}));
     renderWiz();
   };
   const realFiles=Object.values(wiz.files).flat().some(f=>f instanceof Blob);
@@ -602,8 +643,8 @@ function buildExtraction(){
   const d=wiz.desc;const qty=Number(wiz.units)||num(d,/(\d{2,6})\s*(?:units|pcs|pieces|sets)/i,1200);const ctn=num(d,/(\d{1,5})\s*(?:cartons|ctns|boxes)/i,Math.round(qty/12));
   const p=S.products.find(x=>x.id===wiz.productId);const title=(p&&p.name)||d.split(/[,.]|\bwith\b/)[0].trim().replace(/^\d+\s*(units|pcs)?\s*(of)?\s*/i,'')||'Goods';
   const has=k=>!!(wiz.files[k]||wiz.demo);const kg=Math.round(qty*0.42+ctn*0.9);const val=Number(wiz.value)||qty*9.5;
-  return {inv:has('inv')?{desc:title,qty:String(qty),cartons:String(ctn),weight:kg+' kg',value:'USD '+val.toLocaleString(),incoterm:'FOB Yantian',consignee:S.settings.company,origin:'China',hs:''}:null,
-    pl:has('pl')?{desc:title.replace(/smart |digital /i,''),qty:String(qty-50),cartons:String(ctn),weight:kg+' kg',value:'',incoterm:'',consignee:S.settings.company,origin:'China',hs:''}:null,
+  return {inv:has('inv')?{desc:title,qty:String(qty),cartons:String(ctn),weight:kg+' kg',value:'USD '+val.toLocaleString(),incoterm:'FOB '+portName(defaultOrigin(wiz.origin||'CN',wiz.mode)).replace(/ \(.*\)/,''),consignee:S.settings.company,origin:COUNTRIES[wiz.origin||'CN']||'China',hs:''}:null,
+    pl:has('pl')?{desc:title.replace(/smart |digital /i,''),qty:String(qty-50),cartons:String(ctn),weight:kg+' kg',value:'',incoterm:'',consignee:S.settings.company,origin:COUNTRIES[wiz.origin||'CN']||'China',hs:''}:null,
     bl:has('bl')?{desc:title.split(' ').slice(-2).join(' '),qty:'',cartons:String(ctn),weight:(kg-14)+' kg',value:'',incoterm:'',consignee:S.settings.company+'.',origin:'',hs:''}:null};
 }
 function compareIssues(ex){
@@ -635,7 +676,7 @@ function commit(){
   const units=Number(wiz.units)||num(wiz.desc,/(\d{2,6})\s*(?:units|pcs|pieces|sets)/i,1000),value=Number(wiz.value)||units*9;
   if(wiz.replaceId){const s=S.shipments.find(x=>x.id===wiz.replaceId);s.blockers=r.blockers;s.docs=docs;s.ex=wiz.ex;s.cls=wiz.cls;save();$('#modal').classList.remove('open');location.hash='shipment-'+s.id;route();toast(`${s.id} updated — readiness ${score(s)}`);return;}
   const id='SH-'+(1070+S.shipments.filter(s=>s.isNew).length);
-  const s={id,productId:p.id,dest:wiz.dest,mode:wiz.mode,units,value,loadDate:addDays(wiz.mode==='Ocean'?8:3),eta:addDays(wiz.mode==='Ocean'?36:wiz.mode==='Air'?8:5),createdAt:new Date().toISOString(),blockers:r.blockers,docs,ex:wiz.ex,cls:wiz.cls,isNew:true};
+  const s={id,productId:p.id,origin:wiz.origin||'CN',dest:wiz.dest,mode:wiz.mode,units,value,loadDate:addDays(wiz.mode==='Ocean'?8:3),eta:addDays(wiz.mode==='Ocean'?36:wiz.mode==='Air'?8:5),createdAt:new Date().toISOString(),blockers:r.blockers,docs,ex:wiz.ex,cls:wiz.cls,isNew:true};
   S.shipments.unshift(s);save();$('#modal').classList.remove('open');location.hash='shipment-'+id;toast(`${id} saved — readiness ${score(s)}`);
 }
 
@@ -690,32 +731,32 @@ $('#modal').addEventListener('click',e=>{if(e.target===$('#modal'))$('#modal').c
    ===================================================================== */
 function docField(label,value,required,hint){const miss=required&&(value==null||value==='');return `<tr class="${miss?'miss':''}"><td class="k">${esc(label)}${required?' *':''}</td><td>${miss?'<span class="missing">MISSING</span>':esc(value)}${hint?`<div class="muted">${esc(hint)}</div>`:''}</td></tr>`;}
 function docPack(s){
-  const p=product(s), ex=s.ex||{}, inv=ex.inv||{}, pl=ex.pl||{}, bl=ex.bl||{}, st=S.settings, cls=s.cls||classify({desc:p.desc,dest:s.dest});
+  const p=product(s), ex=s.ex||{}, inv=ex.inv||{}, pl=ex.pl||{}, bl=ex.bl||{}, st=S.settings, cls=clsFor(s); const OC=originOf(s), ON=originName(s), POL=portName(polOf(s)).replace(/ \(.*\)/,'');
   const sup=S.partners.find(x=>x.name===p.supplier)||{}; const unit=(s.value/s.units)||0; const cartons=inv.cartons||pl.cartons||Math.ceil(s.units/12);
-  const weight=inv.weight||pl.weight||bl.weight||''; const incoterm=inv.incoterm||'FOB (port of loading)'; const consignee=st.company; const idNo=s.dest==='US'?st.ein:st.eori;
+  const weight=inv.weight||pl.weight||bl.weight||''; const incoterm=inv.incoterm||('FOB '+POL); const consignee=st.company; const idNo=s.dest==='US'?st.ein:st.eori;
   const idLabel=s.dest==='US'?'EIN / IRS number':s.dest==='CA'?'Business Number (BN15) / CARM':'EORI number';
   const docs=[];
   docs.push({id:'ci',title:'Commercial invoice',who:'Factory issues · importer checks',why:'Customs values the shipment from this document. Every other document must agree with it.',
     rows:[['Seller / exporter',p.supplier,1],['Buyer / consignee',consignee,1],[idLabel+' of importer',idNo,1,'Needed on the invoice for '+s.dest],['Invoice number',inv.number||'',1],['Date',fmtD(new Date()),1],['Incoterm + named place',incoterm,1],['Currency',(inv.value||'USD').split(' ')[0]||'USD',1],
-      ['Line 1 — description (as on product record)',p.name+' — '+p.desc,1,'Use this exact wording on the packing list and BL'],['HS / tariff code',cls.code,1],['Country of origin','China',1],['Quantity (units)',String(s.units),1],['Unit price',unit?unit.toFixed(2):'',1],['Line total / invoice total',money(s.value),1],['Cartons',String(cartons),1],['Gross / net weight',weight,1],
+      ['Line 1 — description (as on product record)',p.name+' — '+p.desc,1,'Use this exact wording on the packing list and BL'],['HS / tariff code',cls.code,1],['Country of origin',ON,1],['Quantity (units)',String(s.units),1],['Unit price',unit?unit.toFixed(2):'',1],['Line total / invoice total',money(s.value),1],['Cartons',String(cartons),1],['Gross / net weight',weight,1],
       ...(s.dest==='US'?[['FDA product code (if FDA-regulated)',(p.have||{})['us-fdacode']?'on file':'' ,attrsOf(p).foodContact||attrsOf(p).cosmetic||attrsOf(p).food,'Required on the invoice for food-contact, cosmetic and food items']]:[]),
       ...(s.dest==='CA'?[['Canada Customs Invoice (CCI) fields','Required when value > CAD 3,300: purchaser, vendor, country of transhipment, conditions of sale',s.value>2400,'Your broker can complete the CCI from this invoice if these fields are present']]:[]),
       ...(s.dest==='EU'||s.dest==='UK'?[['Importer EORI on invoice',st.eori,1]]:[]),
       ['Signature + "I declare the information is true and correct"','',1]]});
   docs.push({id:'pl',title:'Packing list',who:'Factory issues',why:'Customs uses it to inspect without opening every carton. Counts and weights must match the invoice exactly.',
-    rows:[['Invoice reference',inv.number||'',1],['Shipper',p.supplier,1],['Consignee',consignee,1],['Description (identical to invoice)',p.name,1],['Total cartons',String(cartons),1],['Units per carton / total units',`${Math.round(s.units/cartons)} / ${s.units}`,1],['Gross weight / net weight',weight,1],['Carton dimensions (cm) and total CBM','',1],['Shipping marks',`${consignee.toUpperCase()} · ${s.id} · C/No. 1–${cartons} · MADE IN CHINA`,1,'Print on every carton'],...(s.mode==='Ocean'?[['Container / seal numbers','',0,'Added at stuffing']]:[])]});
+    rows:[['Invoice reference',inv.number||'',1],['Shipper',p.supplier,1],['Consignee',consignee,1],['Description (identical to invoice)',p.name,1],['Total cartons',String(cartons),1],['Units per carton / total units',`${Math.round(s.units/cartons)} / ${s.units}`,1],['Gross weight / net weight',weight,1],['Carton dimensions (cm) and total CBM','',1],['Shipping marks',`${consignee.toUpperCase()} · ${s.id} · C/No. 1–${cartons} · MADE IN ${ON.toUpperCase()}`,1,'Print on every carton'],...(s.mode==='Ocean'?[['Container / seal numbers','',0,'Added at stuffing']]:[])]});
   if(s.dest==='US'&&s.mode==='Ocean')docs.push({id:'isf',title:'ISF 10+2 worksheet (US ocean)',who:'Importer files via broker · 24 h before loading · data mostly from the factory',why:'Late or wrong ISF = $5,000 liquidated damages per violation and a flag for exam.',
-    rows:[['1. Seller (owner of goods)',p.supplier,1],['2. Buyer',consignee,1],['3. Importer of record number (EIN)',st.ein,1],['4. Consignee number',st.ein,1],['5. Manufacturer / supplier name + address',p.supplier+(sup.country?', '+sup.country:''),1],['6. Ship-to party (final delivery address)','',1],['7. Country of origin','China',1],['8. HTSUS number (6-digit minimum)',cls.code,1],['9. Container stuffing location','',1,'Factory or consolidator warehouse address'],['10. Consolidator (stuffer)','',1],['Carrier: vessel stow plan + container status messages','carrier files',0],['Bill of lading number (to link)',bl.number||'',1]]});
+    rows:[['1. Seller (owner of goods)',p.supplier,1],['2. Buyer',consignee,1],['3. Importer of record number (EIN)',st.ein,1],['4. Consignee number',st.ein,1],['5. Manufacturer / supplier name + address',p.supplier+(sup.country?', '+sup.country:''),1],['6. Ship-to party (final delivery address)','',1],['7. Country of origin',ON,1],['8. HTSUS number (6-digit minimum)',cls.code,1],['9. Container stuffing location','',1,'Factory or consolidator warehouse address'],['10. Consolidator (stuffer)','',1],['Carrier: vessel stow plan + container status messages','carrier files',0],['Bill of lading number (to link)',bl.number||'',1]]});
   if(s.dest==='CA')docs.push({id:'b3',title:'Canada release & accounting data (CBSA, B3 / CARM)',who:'Broker files · importer provides',why:'Since CARM, the importer must have a CARM account and security posted; otherwise goods wait at the border until duties are paid in full.',
-    rows:[['Importer Business Number (BN15, RM account)',st.ein,1],['CARM account + Release Prior to Payment security','',1],['Tariff classification (10-digit)',cls.code,1],['Tariff treatment','02 — MFN (China origin)',1],['Country of origin','CN',1],['Value for duty + currency',money(s.value)+' USD',1],['Place of export','China',1],['Mode / cargo control number (from carrier)',bl.number||'',1],['GST 5% on duty-paid value','calculated',0],['Bilingual labelling confirmed on product',(p.have||{})['ca-bilingual']?'yes':'',1,'Required before sale in Canada']]});
+    rows:[['Importer Business Number (BN15, RM account)',st.ein,1],['CARM account + Release Prior to Payment security','',1],['Tariff classification (10-digit)',cls.code,1],['Tariff treatment',OC==='CN'?'02 — MFN (China origin)':'02 — MFN (check CUSMA/CPTPP eligibility for '+ON+')',1],['Country of origin',OC,1],['Value for duty + currency',money(s.value)+' USD',1],['Place of export',ON,1],['Mode / cargo control number (from carrier)',bl.number||'',1],['GST 5% on duty-paid value','calculated',0],['Bilingual labelling confirmed on product',(p.have||{})['ca-bilingual']?'yes':'',1,'Required before sale in Canada']]});
   if(s.dest==='EU')docs.push({id:'sad',title:'EU import declaration data (customs declaration / SAD)',who:'Broker files · importer provides',why:'The declaration pulls together EORI, code, value, origin and VAT treatment. Pre-arrival ENS (ICS2) is separate and filed by the carrier from your data.',
-    rows:[['Importer EORI',st.eori,1],['Procedure code','40 00 (release for free circulation)',1],['CN / TARIC code (10-digit)',cls.code,1],['Customs value (CIF) + currency','invoice value + freight + insurance',1],['Country of origin / dispatch','CN / CN',1],['Preference code','100 (none — China)',1],['VAT: import VAT or IOSS / Article 23 deferment','',1],['GPSR Responsible Person (EU address)',(p.have||{})['eu-gpsr']?'on file':'',1,'Must appear on the product or packaging'],['Packaging EPR registration number (e.g. LUCID)','',0]]});
+    rows:[['Importer EORI',st.eori,1],['Procedure code','40 00 (release for free circulation)',1],['CN / TARIC code (10-digit)',cls.code,1],['Customs value (CIF) + currency','invoice value + freight + insurance',1],['Country of origin / dispatch',OC+' / '+OC,1],['Preference code',OC==='CN'?'100 (none — China)':'100 unless a preferential origin proof is held',1],['VAT: import VAT or IOSS / Article 23 deferment','',1],['GPSR Responsible Person (EU address)',(p.have||{})['eu-gpsr']?'on file':'',1,'Must appear on the product or packaging'],['Packaging EPR registration number (e.g. LUCID)','',0]]});
   if(s.dest==='UK')docs.push({id:'cds',title:'UK import declaration data (CDS)',who:'Broker files · importer provides',why:'HMRC\'s Customs Declaration Service needs the GB EORI, commodity code and VAT treatment.',
-    rows:[['GB EORI',st.eori,1],['Commodity code (10-digit)',cls.code,1],['Customs value + currency','invoice value + freight + insurance',1],['Country of origin','CN',1],['Procedure code','40 00',1],['Import VAT: postponed VAT accounting?','',1],['UK Responsible Person / UKCA documentation','',attrsOf(p).electrical||attrsOf(p).children]]});
-  docs.push({id:'coo',title:'Certificate of origin (China)',who:'Factory applies at CCPIT / China Customs',why:'Not always mandatory for China-origin goods, but often requested by buyers, banks and for AD/CVD or quota checks.',
-    rows:[['Exporter',p.supplier,1],['Consignee',consignee,1],['Means of transport and route',`${s.mode} · China → ${s.dest}`,1],['Marks and numbers',`${s.id} · C/No. 1–${cartons}`,1],['Description + HS code',`${p.name} · ${cls.code}`,1],['Quantity + weight',`${s.units} units · ${weight}`,1],['Invoice number + date',inv.number||'',1]]});
+    rows:[['GB EORI',st.eori,1],['Commodity code (10-digit)',cls.code,1],['Customs value + currency','invoice value + freight + insurance',1],['Country of origin',OC,1],['Procedure code','40 00',1],['Import VAT: postponed VAT accounting?','',1],['UK Responsible Person / UKCA documentation','',attrsOf(p).electrical||attrsOf(p).children]]});
+  docs.push({id:'coo',title:'Certificate of origin ('+ON+')',who:OC==='CN'?'Factory applies at CCPIT / China Customs':'Factory applies at the local chamber of commerce',why:`Not always mandatory for ${ON}-origin goods, but often requested by buyers, banks and for AD/CVD, quota or preferential-duty checks.`,
+    rows:[['Exporter',p.supplier,1],['Consignee',consignee,1],['Means of transport and route',`${s.mode} · ${POL} → ${portName(podOf(s))}`,1],['Marks and numbers',`${s.id} · C/No. 1–${cartons}`,1],['Description + HS code',`${p.name} · ${cls.code}`,1],['Quantity + weight',`${s.units} units · ${weight}`,1],['Invoice number + date',inv.number||'',1]]});
   docs.push({id:'sli',title:'Shipper\'s letter of instruction (to the factory)',who:'Importer sends · factory follows',why:'The single most effective way to stop document mismatches: tell the factory exactly what every document must say before they produce them.',
-    rows:[['Use this description on invoice, packing list and BL',p.name,1],['Use this HS code on every document',cls.code,1],['Consignee / notify party exactly as',consignee+(idNo?' · '+idLabel+' '+idNo:''),1],['Incoterm',incoterm,1],['Currency + value must equal the PO','USD · '+money(s.value),1],['Marks on cartons',`${consignee.toUpperCase()} · ${s.id} · MADE IN CHINA`,1],['Labels required on product / packaging',requirementsFor(p,s.dest,s.mode).filter(r=>r.kind.startsWith('label')).map(r=>r.name).join('; ')||'—',1],['Certificates to send with documents',requirementsFor(p,s.dest,s.mode).filter(r=>r.kind==='cert').map(r=>r.name).join('; ')||'—',1],['Deadline for draft documents',fmtD(nextDeadline(s).date),1]]});
+    rows:[['Use this description on invoice, packing list and BL',p.name,1],['Use this HS code on every document',cls.code,1],['Consignee / notify party exactly as',consignee+(idNo?' · '+idLabel+' '+idNo:''),1],['Incoterm',incoterm,1],['Currency + value must equal the PO','USD · '+money(s.value),1],['Marks on cartons',`${consignee.toUpperCase()} · ${s.id} · MADE IN ${ON.toUpperCase()}`,1],['Labels required on product / packaging',reqsFor(s).filter(r=>r.kind.startsWith('label')).map(r=>r.name).join('; ')||'—',1],['Certificates to send with documents',reqsFor(s).filter(r=>r.kind==='cert').map(r=>r.name).join('; ')||'—',1],['Deadline for draft documents',fmtD(nextDeadline(s).date),1]]});
   return docs;
 }
 function pageDocPack(id){
@@ -733,13 +774,13 @@ ACTIONS.copyPack=(d)=>{const s=S.shipments.find(x=>x.id===d.id);const txt=docPac
    Rates & fees
    ===================================================================== */
 function pageRates(shipId){
-  const s=shipId?S.shipments.find(x=>x.id===shipId):null; const f=window.__rt||(window.__rt={dest:s?s.dest:S.settings.market,mode:s?s.mode:'Ocean',cbm:s?Math.round(s.units/60):12,kg:s?Math.round(s.units*0.5):600,value:s?s.value:10000});
-  if(s){f.dest=s.dest;f.mode=s.mode;f.value=s.value;}
+  const s=shipId?S.shipments.find(x=>x.id===shipId):null; const f=window.__rt||(window.__rt={origin:s?originOf(s):'CN',dest:s?s.dest:S.settings.market,mode:s?s.mode:'Ocean',cbm:s?Math.round(s.units/60):12,kg:s?Math.round(s.units*0.5):600,value:s?s.value:10000});
+  if(s){f.origin=originOf(s);f.dest=s.dest;f.mode=s.mode;f.value=s.value;}
   setTimeout(loadRates,0);
   return `${s?`<a class="back" href="#shipment-${s.id}">← ${esc(product(s).name)} · ${s.id}</a>`:''}
   ${pageHead('Rates & fees','Freight estimate plus every destination fee and duty, so the landed cost has no surprises.')}
-  <section class="card"><div class="card-h"><h2>Lane</h2><span class="hint">China → destination</span></div>
-    <div class="row" style="padding:0 18px 16px;flex-wrap:wrap"><select class="in" onchange="__rt.dest=this.value;route()">${MARKETS.map(([m,n])=>`<option value="${m}" ${f.dest===m?'selected':''}>${n}</option>`).join('')}</select><select class="in" onchange="__rt.mode=this.value;route()">${['Ocean','Air','Express'].map(m=>`<option ${f.mode===m?'selected':''}>${m}</option>`).join('')}</select><label class="muted" style="font-size:12px">Volume (cbm) <input class="in" style="width:90px" type="number" value="${f.cbm}" onchange="__rt.cbm=+this.value;route()"></label><label class="muted" style="font-size:12px">Weight (kg) <input class="in" style="width:90px" type="number" value="${f.kg}" onchange="__rt.kg=+this.value;route()"></label><label class="muted" style="font-size:12px">Goods value (USD) <input class="in" style="width:110px" type="number" value="${f.value}" onchange="__rt.value=+this.value;route()"></label></div></section>
+  <section class="card"><div class="card-h"><h2>Lane</h2><span class="hint">origin → destination</span></div>
+    <div class="row" style="padding:0 18px 16px;flex-wrap:wrap"><select class="in" onchange="__rt.origin=this.value;route()">${Object.entries(COUNTRIES).map(([c,n])=>`<option value="${c}" ${f.origin===c?'selected':''}>${n}</option>`).join('')}</select><span class="muted">→</span><select class="in" onchange="__rt.dest=this.value;route()">${MARKETS.map(([m,n])=>`<option value="${m}" ${f.dest===m?'selected':''}>${n}</option>`).join('')}</select><select class="in" onchange="__rt.mode=this.value;route()">${['Ocean','Air','Express'].map(m=>`<option ${f.mode===m?'selected':''}>${m}</option>`).join('')}</select><label class="muted" style="font-size:12px">Volume (cbm) <input class="in" style="width:90px" type="number" value="${f.cbm}" onchange="__rt.cbm=+this.value;route()"></label><label class="muted" style="font-size:12px">Weight (kg) <input class="in" style="width:90px" type="number" value="${f.kg}" onchange="__rt.kg=+this.value;route()"></label><label class="muted" style="font-size:12px">Goods value (USD) <input class="in" style="width:110px" type="number" value="${f.value}" onchange="__rt.value=+this.value;route()"></label></div></section>
   <div class="two"><section class="card" id="ratesOut"><div class="card-h"><h2>Freight</h2></div><div class="p muted" style="padding:0 18px 16px">Loading…</div></section>
   <section class="card" id="feesOut"><div class="card-h"><h2>Destination fees & duty</h2></div><div class="p muted" style="padding:0 18px 16px">Loading…</div></section></div>
   <section class="card"><div class="card-h"><h2>Integrations</h2><span class="hint">what is live on your server</span></div><div id="integ" class="p muted" style="padding:0 18px 16px">Checking…</div>
@@ -749,7 +790,7 @@ function pageRates(shipId){
 }
 async function loadRates(){
   const f=window.__rt; const out=$('#ratesOut'), fo=$('#feesOut'), ig=$('#integ'); if(!out)return;
-  try{const r=await fetch(`/api/rates?dest=${f.dest}&mode=${f.mode}&cbm=${f.cbm}&kg=${f.kg}&value=${f.value}`);const j=await r.json();
+  try{const r=await fetch(`/api/rates?origin=${f.origin}&dest=${f.dest}&mode=${f.mode}&cbm=${f.cbm}&kg=${f.kg}&value=${f.value}`);const j=await r.json();
     out.innerHTML=`<div class="card-h"><h2>Freight</h2><span class="hint">${j.live.length?'live: '+j.live.join(', '):'built-in estimate'}</span></div>${j.quotes.map(q=>`<div class="li"><div class="li-b"><div class="li-t">${esc(q.service)}</div><div class="li-s">${esc(q.provider)} · ~${q.days} days port to port</div></div><div class="li-r"><div class="num">${money(q.low)}–${money(q.high)}</div></div></div>`).join('')}<p class="muted p" style="padding:0 18px 16px;font-size:12px">${esc(j.note)}</p>`;
     const total=j.fees.reduce((a,x)=>a+x.amount,0);
     fo.innerHTML=`<div class="card-h"><h2>Destination fees & duty</h2><span class="hint">${f.dest}</span></div>${j.fees.map(x=>`<div class="kv"><span>${esc(x.label)}</span><b>${money(x.amount)}</b></div>`).join('')}<div class="kv"><span>Duty</span><b>see classification on the shipment</b></div><div class="kv total"><span>Fees excl. duty & freight</span><b>${money(total)}</b></div>`;
@@ -765,7 +806,7 @@ async function loadRates(){
 function pageHow(){
   return `${pageHead('How ClearWay works','The problem, the flow, and who does what. Read this once; the rest of the app follows it.')}
   <section class="card"><div class="card-h"><h2>The problem we solve</h2></div><div class="prose">
-    <p>Small importers get held at customs for boring reasons: the invoice and packing list disagree, a certificate is missing, a label lacks a required line. The factory that produced the documents never sees the destination's rules; the broker who knows the rules sees the documents only when the container is already on the water. Each hold costs an exam fee, days of storage and — for regulated products — sometimes the goods.</p>
+    <p>Small importers — from China today, from anywhere tomorrow — get held at customs for boring reasons: the invoice and packing list disagree, a certificate is missing, a label lacks a required line. The factory that produced the documents never sees the destination's rules; the broker who knows the rules sees the documents only when the container is already on the water. Each hold costs an exam fee, days of storage and — for regulated products — sometimes the goods.</p>
     <p>ClearWay sits <b>before booking</b>, between the importer and the factory. It turns one product description into a list of what the destination needs, checks the factory's documents against each other and against that list, and puts a price on every gap so people fix the expensive ones first.</p></div></section>
   <section class="card"><div class="card-h"><h2>Who does what</h2><span class="hint">pick your role in the sidebar to see your tasks first</span></div>
     <table class="tbl"><thead><tr><th>Role</th><th>Owns</th><th>Uses ClearWay to</th></tr></thead><tbody>

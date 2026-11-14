@@ -16,9 +16,9 @@ It is built for the moment *before booking*, when problems are cheap to fix — 
 
 | Page | What it does |
 |---|---|
-| **Overview** | What needs your attention first, with the cost of leaving it; where every shipment sits on its journey; next deadlines. |
+| **Overview** | A **route map** of every shipment on the move (origin → destination, progress dot, colour = status); what needs your attention first, with the cost of leaving it; where every shipment sits on its journey; next deadlines. |
 | **Shipments** | All shipments, sorted by what needs you first — stage, readiness, open items, cost if not fixed, next deadline. |
-| **Shipment detail** | The journey (8 stages, who owns each), every blocker with *why it matters* and *what it costs if not fixed*, three-way document check, classification, required certificates, landed-cost estimate. Mark items fixed, ask the supplier (English / 中文), share with the broker. |
+| **Shipment detail** | The journey (8 stages, who owns each), a **tracking card** (route map, milestones booked → departed → arrived → released, carrier / vessel / container with a tracking link), every blocker with *why it matters* and *what it costs if not fixed*, three-way document check, classification, required certificates, landed-cost estimate. Mark items fixed, ask the supplier (English / 中文), share with the broker. |
 | **Products** | One record per product: description, markets, classification, requirements on file, certificates with expiry. Every shipment inherits it. |
 | **Documents** | Every document seen, and whether it agrees with the others on the same shipment. |
 | **Compliance rules** | Each market's requirements in plain language, who provides them, official links, and what each costs when missing. Includes a "check a product" box. |
@@ -27,6 +27,10 @@ It is built for the moment *before booking*, when problems are cheap to fix — 
 | **Rates & fees** | Freight estimate for the lane (built-in ranges, or live quotes once a rate API key is configured) plus every destination fee (MPF/HMF, ISF, bond, broker, GST/VAT, THC). |
 | **How it works** | The operating model: the problem, the 8-stage journey, who does what, and an honest statement of what the rules cover. |
 | **Settings** | Company / IOR details, extraction status, and the editable cost model behind every estimate. |
+
+### Origins
+
+Shipments can originate anywhere — China is the default, with ports/airports for 30+ origin countries built in (`public/map.js`). Rules are destination-driven; China-specific measures (Section 301, UFLPA) only apply to China-origin goods. Freight estimates scale by origin lane.
 
 ### Markets, attributes and rule coverage
 

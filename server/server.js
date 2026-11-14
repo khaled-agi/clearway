@@ -262,10 +262,13 @@ function integrationStatus() {
     extraction: !!API_KEY,
   };
 }
+const ORIGIN_FACTOR = { CN: 1, HK: 1, VN: 1.05, TH: 1.05, ID: 1.08, MY: 1.03, KH: 1.1, IN: 1.1, BD: 1.15, PK: 1.15, LK: 1.1, KR: 0.95, TW: 0.95, JP: 1.0, TR: 0.7, AE: 0.8, EG: 0.75, DE: 0.35, NL: 0.35, BE: 0.35, FR: 0.4, ES: 0.45, IT: 0.45, GR: 0.5, PL: 0.4, GB: 0.4, US: 0.5, CA: 0.5, MX: 0.45, BR: 0.9, AU: 1.0, ZA: 1.0, NG: 1.1 };
 async function rates(url, res) {
-  const dest = (url.searchParams.get('dest') || 'US').toUpperCase(), mode = url.searchParams.get('mode') || 'Ocean';
+  const dest = (url.searchParams.get('dest') || 'US').toUpperCase(), mode = url.searchParams.get('mode') || 'Ocean', origin = (url.searchParams.get('origin') || 'CN').toUpperCase();
+  const factor = ORIGIN_FACTOR[origin] || 1;
   const cbm = Number(url.searchParams.get('cbm')) || 10, kg = Number(url.searchParams.get('kg')) || 600, value = Number(url.searchParams.get('value')) || 10000;
-  const lane = LANES['CN-' + dest] || LANES['CN-US'];
+  const base = LANES['CN-' + dest] || LANES['CN-US'];
+  const lane = { ...base, ocean40: base.ocean40.map(x => Math.round(x * factor)), ocean20: base.ocean20.map(x => Math.round(x * factor)), lclCbm: base.lclCbm.map(x => x * factor), airKg: base.airKg.map(x => x * factor), expressKg: base.expressKg.map(x => x * factor), days: { Ocean: Math.round(base.days.Ocean * (factor < 0.6 ? 0.5 : 1)), Air: base.days.Air, Express: base.days.Express } };
   // Live adapters would go here; each returns the same shape. None is called without a key.
   const quotes = [];
   if (mode === 'Ocean') {
@@ -274,7 +277,7 @@ async function rates(url, res) {
   } else if (mode === 'Air') quotes.push({ provider: 'Built-in estimate', service: `Air freight ${kg} kg (chargeable)`, low: Math.round(lane.airKg[0] * kg), high: Math.round(lane.airKg[1] * kg), days: lane.days.Air });
   else quotes.push({ provider: 'Built-in estimate', service: `Express courier ${kg} kg`, low: Math.round(lane.expressKg[0] * kg), high: Math.round(lane.expressKg[1] * kg), days: lane.days.Express });
   const fees = destinationFees(dest, mode, value, lane);
-  json(res, 200, { dest, mode, quotes, fees, live: Object.entries(integrationStatus().rates).filter(([k, v]) => v === true && k !== 'builtin').map(([k]) => k), note: 'Built-in figures are market ranges for planning. Connect a rate API in .env for bookable quotes.' });
+  json(res, 200, { dest, mode, origin, quotes, fees, live: Object.entries(integrationStatus().rates).filter(([k, v]) => v === true && k !== 'builtin').map(([k]) => k), note: 'Built-in figures are market ranges for planning. Connect a rate API in .env for bookable quotes.' });
 }
 function destinationFees(dest, mode, value, lane) {
   const f = [];
