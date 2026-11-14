@@ -46,6 +46,12 @@ Every blocker carries an estimate of what it costs if shipped as-is — exam fee
 
 ![shipment](docs/shipment.png)
 
+## Accounts
+
+Run the server and open the app: you'll be asked to **sign in or create an account**. Each company gets a workspace saved on the server (`data/`, git-ignored) — shipments, products, partners, settings. Invite your factory, forwarder and broker from **Settings → Team**; when they sign up with the invited email they land in your workspace with that role. New workspaces start empty with a three-step getting-started checklist; sample data is opt-in.
+
+Passwords are hashed (scrypt), sessions are HttpOnly cookies. This is a prototype account system suitable for a pilot behind HTTPS, not a hardened identity provider — swap in Auth0/Clerk/Supabase before a public launch. "Continue without an account" keeps everything in the browser only.
+
 ## Quick start
 
 Requires Node 18+. No dependencies to install.
@@ -112,11 +118,12 @@ Returns `{ simulated: false, ex: { inv, pl, bl }, classification: { code, text, 
 | Readiness score, risk map, KPIs | Real, computed from blockers. The dollar exposure is a rough heuristic. |
 | Seed shipments, products, partners | Demo data in `app.js`; "Restore demo data" in Settings. |
 | Cost estimates | Heuristic ranges from the editable cost model — for prioritisation, not quotes. |
-| Persistence, auth, supplier portal, broker sharing | Not yet — see roadmap. |
+| Accounts & persistence | Real: email/password accounts, server-side workspaces (JSON files), team invites. No email sending yet. |
+| Supplier portal, broker share links | Not yet — invites + the document pack cover it for now. |
 
 ## Roadmap
 
-- [ ] Server-side persistence (SQLite) and accounts, so suppliers and brokers get real links instead of copy-paste
+- [x] Accounts + server-side workspaces — [ ] invite emails, SQLite/Postgres, hosted identity provider
 - [ ] Supplier intake link (zh-CN) — factory fills in facts once; invoice/packing list/label spec generated from the record
 - [x] Official tariff lookups (USITC, UK Trade Tariff) — [ ] CBP CROSS ruling links, EU/CA data, per-SKU change alerts
 - [ ] Live freight quotes (Freightos WebCargo / Maersk Spot / Flexport adapters)

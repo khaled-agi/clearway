@@ -13,11 +13,16 @@ const OPT=[['certs','Certificates & test reports','FCC, CPC, CE, FDA letters, la
 /* =====================================================================
    State + persistence
    ===================================================================== */
-const KEY='clearway.v2';
-let S=load();
-function load(){ try{const j=JSON.parse(localStorage.getItem(KEY)); if(j&&j.shipments)return j;}catch(e){} return seed(); }
-function save(){ try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){} }
-function reset(){ S=seed(); save(); route(); toast('Demo data restored'); }
+const KEY='clearway.v3';
+let MODE='local'; // 'local' (no server / file://), 'server' (signed in)
+let ME=null, WS=null, saveTimer=null;
+let S=emptyState();
+function emptyState(){return {shipments:[],products:[],partners:[],settings:{company:'',ein:'',eori:'',market:'US',currency:'USD',role:'Importer'},costs:{},onboarding:{}};}
+function loadLocal(){ try{const j=JSON.parse(localStorage.getItem(KEY)); if(j&&j.shipments)return j;}catch(e){} return emptyState(); }
+function save(){ try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
+  if(MODE==='server'){clearTimeout(saveTimer);saveTimer=setTimeout(async()=>{try{const r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:S,workspaceName:S.settings.company||undefined})});if(r.status===401){MODE='anon';showAuth();}}catch(e){}},600);} }
+function reset(){ S=seed(); if(!S.settings.role)S.settings.role='Importer'; save(); route(); toast('Sample data loaded'); }
+function clearAll(){ S=emptyState(); if(ME)S.settings.company=WS&&WS.name||''; save(); route(); toast('Workspace cleared'); }
 
 function mkB(sev,kind,title,detail,fix,owner,reqId){return {id:uid('B'),sev,kind,title,detail,fix,owner:owner||'Factory',reqId:reqId||null,done:false};}
 function seed(){
@@ -77,7 +82,7 @@ function seed(){
     sh('SH-1031','PR8','US','Ocean',4000,18000,-30,-4,[],{stage:7,released:addDays(-1),actual:{exam:false,demurrage:0}}),
     sh('SH-1036','PR1','US','Ocean',1000,9500,-28,-2,[],{stage:6,notes:'Pulled for x-ray exam; released next day. Cost: $300 exam + 1 day demurrage.',actual:{exam:true,demurrage:1}}),
   ];
-  return {shipments,products,partners,settings:{company:'Importer LLC',ein:'',eori:'',market:'US',currency:'USD'},costs:{}};
+  return {shipments,products,partners,settings:{company:(S&&S.settings&&S.settings.company)||'Importer LLC',ein:'',eori:'',market:'US',currency:'USD',role:(S&&S.settings&&S.settings.role)||'Importer'},costs:{},onboarding:{sample:true}};
 }
 
 /* =====================================================================
@@ -115,12 +120,15 @@ function docIssues(s){return openB(s).filter(b=>DOC_KINDS.has(b.kind));}
    Routing + shell
    ===================================================================== */
 const ROLES=[['Importer','You own the product record and the entry; you decide what ships.'],['Factory','You produce the goods, the documents and the labels.'],['Forwarder','You book the cargo, file ISF/ENS data, issue the BL.'],['Broker','You classify, file the entry and talk to customs.']];
-const NAV=[['overview','Overview',icon('home')],['shipments','Shipments',icon('box')],['products','Products',icon('grid')],['documents','Documents',icon('doc')],['rules','Compliance rules',icon('shield')],['partners','Partners',icon('people')],['rates','Rates & fees',icon('rates')],['how','How it works',icon('help')],['settings','Settings',icon('gear')]];
+const NAV=[['overview','Home',icon('home')],['shipments','Shipments',icon('box')],['products','Products',icon('grid')],['settings','Settings',icon('gear')]];
+const NAV_MORE=[['partners','Partners',icon('people')],['documents','Documents',icon('doc')],['rules','Compliance rules',icon('shield')],['rates','Rates & fees',icon('rates')],['how','How it works',icon('help')]];
 function icon(n){const p={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',doc:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',people:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 2 5 5"/>',rates:'<path d="M12 2v20M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 3 5 3 5 1.1 5 3-2.2 3-5 3-5-1.1-5-3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/>'}[n];
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;}
 
 function renderNav(active){
-  $('#nav').innerHTML=NAV.map(([id,label,ic])=>`<a href="#${id}" class="${active===id||(active.startsWith('shipment-')&&id==='shipments')||(active.startsWith('product-')&&id==='products')||(active.startsWith('docs-')&&id==='shipments')||(active.startsWith('rates-')&&id==='rates')?'active':''}">${ic}<span>${label}</span></a>`).join('');
+  const link=([id,label,ic])=>`<a href="#${id}" class="${active===id||(active.startsWith('shipment-')&&id==='shipments')||(active.startsWith('product-')&&id==='products')||(active.startsWith('docs-')&&id==='shipments')||(active.startsWith('rates-')&&id==='rates')?'active':''}">${ic}<span>${label}</span></a>`;
+  $('#nav').innerHTML=NAV.map(link).join('')+`<div class="nav-more">More</div>`+NAV_MORE.map(link).join('');
+  $('#account').innerHTML=ME?`<div class="acct"><div class="av" style="background:${hue(ME.email)}">${initials(ME.email)}</div><div class="acct-b"><b>${esc(S.settings.company||(WS&&WS.name)||'My workspace')}</b><span>${esc(ME.email)}</span></div><button class="btn sm ghost" data-act="logout" title="Sign out">↪</button></div>`:(MODE==='local'?`<div class="acct"><div class="acct-b"><b>Local mode</b><span>Data stays in this browser</span></div></div>`:'');
   const role=S.settings.role||'Importer';$('#role').innerHTML=`<div class="role-l">I am the…</div><div class="seg vert">${ROLES.map(r=>`<button class="${role===r[0]?'active':''}" onclick="S.settings.role='${r[0]}';save();route()">${r[0]}</button>`).join('')}</div><div class="muted" style="font-size:11px;margin-top:6px">${esc(ROLES.find(r=>r[0]===role)[1])}</div>`;
 }
 function route(){
@@ -143,6 +151,7 @@ function route(){
   bind(v);
 }
 window.addEventListener('hashchange',route);
+document.addEventListener('click',e=>{const el=e.target.closest('#account [data-act]');if(el&&ACTIONS[el.dataset.act])ACTIONS[el.dataset.act](el.dataset,el);});
 
 /* generic binders: data-go, data-act */
 function bind(root){
@@ -172,7 +181,21 @@ function stepper(s,compact){
 /* =====================================================================
    Pages
    ===================================================================== */
+function pageWelcome(){
+  const ob=S.onboarding||{}; const co=!!S.settings.company;
+  return `<div class="welcome">
+    <h1>Welcome to ClearWay${ME?', '+esc(ME.email.split('@')[0]):''}</h1>
+    <p class="lead">Before you book a shipment from China, ClearWay checks three things: that your supplier's documents agree with each other, that the destination's certificates and labels are in place, and what it would cost you if they weren't. Three steps to your first check:</p>
+    <div class="ob">
+      <a class="ob-step ${co?'done':''}" href="#settings"><span class="n">${co?'✓':'1'}</span><div><b>Tell us who the importer is</b><span>Your company name and customs ID (EIN / EORI / BN). It goes on every document.</span></div><span class="go">Settings →</span></a>
+      <a class="ob-step" href="#products" onclick="setTimeout(()=>ACTIONS.addProduct(),50)"><span class="n">2</span><div><b>Add your first product</b><span>Describe it in plain words, pick a category. We work out the rules and the tariff code.</span></div><span class="go">Add product →</span></a>
+      <a class="ob-step" href="#overview" onclick="event.preventDefault();ACTIONS.new({})"><span class="n">3</span><div><b>Check a shipment</b><span>Drop the invoice, packing list and bill of lading. Get a readiness score and a fix list in a minute.</span></div><span class="go">New shipment →</span></a>
+    </div>
+    <div class="ob-alt">Just exploring? <button class="btn" data-act="reset">Load sample data</button> <span class="muted">— nine example shipments you can delete later.</span> &nbsp; <a href="#how">How ClearWay works →</a></div>
+  </div>`;
+}
 function pageOverview(){
+  if(!S.shipments.length&&!S.products.length)return pageWelcome();
   const active=S.shipments.filter(s=>stageOf(s)<7);
   const blocked=active.filter(s=>status(s)==='crit'), warn=active.filter(s=>status(s)==='warn'), ready=active.filter(s=>status(s)==='good');
   const ex=active.map(exposure); const low=ex.reduce((a,e)=>a+e.low,0), high=ex.reduce((a,e)=>a+e.high,0), atRisk=ex.reduce((a,e)=>a+e.atRisk,0);
@@ -407,9 +430,13 @@ function pageSettings(){
       <label>EIN / IRS number (US)<input class="in" value="${esc(S.settings.ein)}" onchange="S.settings.ein=this.value;save()"></label>
       <label>EORI (EU/UK)<input class="in" value="${esc(S.settings.eori)}" onchange="S.settings.eori=this.value;save()"></label>
       <label>Default market<select class="in" onchange="S.settings.market=this.value;save()">${MARKETS.map(([m])=>`<option ${S.settings.market===m?'selected':''}>${m}</option>`).join('')}</select></label></div></section>
-    <section class="card"><div class="card-h"><h2>Document extraction</h2></div><div id="health" class="p muted">Checking server…</div>
+    <section class="card"><div class="card-h"><h2>Document extraction</h2></div><div id="health" class="p muted">${window.__health?(window.__health.ok?(window.__health.live?`${pill('good','Live')} Claude reads uploaded documents (${esc(window.__health.model)}).`:`${pill('warn','Simulated')} Server running without an API key.`):`${pill('crit','No server')} Open the app through <code>npm start</code> to enable extraction.`):'Checking server…'}</div>
       <p class="p muted">With <code>ANTHROPIC_API_KEY</code> in <code>.env</code>, uploads are read by Claude on your own server. Without it the app simulates extraction so you can still see the flow.</p></section>
-    <section class="card"><div class="card-h"><h2>Data</h2></div><div class="chips"><button class="btn" data-act="export">Copy all data as JSON</button><button class="btn" data-act="reset">Restore demo data</button></div><p class="muted p">Everything is stored in this browser only.</p></section>
+    ${ME?`<section class="card"><div class="card-h"><h2>Team</h2><button class="btn sm" data-act="invite">+ Invite</button></div>
+      ${((WS&&WS.members)||[]).map(m=>`<div class="li"><span class="av" style="background:${hue(m.email)}">${initials(m.email)}</span><div class="li-b"><div class="li-t">${esc(m.email)}</div><div class="li-s">${esc(m.role)}</div></div></div>`).join('')}
+      ${((WS&&WS.invites)||[]).map(i=>`<div class="li"><span class="av" style="background:var(--neutral-bg);color:var(--ink-2)">?</span><div class="li-b"><div class="li-t">${esc(i.email)}</div><div class="li-s">Invited as ${esc(i.role)} — they sign up with this email to join</div></div></div>`).join('')}
+      <p class="muted p" style="padding:0 18px 16px">Invite your factory, forwarder and broker. Each sees the same shipments, with their own tasks first.</p></section>`:''}
+    <section class="card"><div class="card-h"><h2>Data</h2></div><div class="chips"><button class="btn" data-act="export">Copy all data as JSON</button><button class="btn" data-act="reset">Load sample data</button><button class="btn" data-act="clearAll">Clear workspace</button></div><p class="muted p">${ME?'Saved to your workspace on the server, and cached in this browser.':'Stored in this browser only. Run the server and create an account to save on the server and work with your team.'}</p></section>
   </div><div>
     <section class="card"><div class="card-h"><h2>Cost model</h2><span class="hint">USD · used for every "if not fixed" estimate</span></div>
       <div class="form">${[['examXray','X-ray / VACIS exam, per container'],['examIntensive','Intensive exam incl. drayage, per container'],['demurragePerDay','Demurrage per container per day'],['brokerHandling','Broker handling for a hold or amendment'],['isfPenalty','ISF liquidated damages, per violation'],['markingDutyPct','Marking duty for unmarked goods (%)'],['relabelPerUnit','Relabel / rework per unit'],['storagePerDayPGA','Bonded storage during agency detention, per day'],['delayDaysDoc','Typical delay for a document hold (days)'],['delayDaysPGA','Typical delay for an agency detention (days)']].map(([k,l])=>`<label>${l}<input class="in" type="number" step="any" value="${c[k]}" onchange="S.costs=S.costs||{};S.costs['${k}']=+this.value;Object.assign(COSTS,S.costs);save()"></label>`).join('')}</div>
@@ -453,7 +480,10 @@ const ACTIONS={
   askPartner:(d)=>{const p=S.partners.find(x=>x.id===d.p);const ships=S.shipments.filter(s=>product(s).supplier===p.name);const bs=ships.flatMap(s=>openB(s).map(b=>({...b,sid:s.id})));requestModal(p.name,ships[0],bs);},
   share:(d)=>{const s=S.shipments.find(x=>x.id===d.id);const txt=`ClearWay readiness — ${product(s).name} (${s.id})\nChina → ${s.dest} · ${s.mode} · ETA ${fmtD(s.eta)}\nReadiness ${score(s)} — ${STATUS[status(s)][0]}\n\nOpen items:\n${openB(s).map(b=>`- [${b.sev==='crit'?'BLOCKING':'review'}] ${b.title} — ${b.fix} (${b.owner})`).join('\n')||'none'}\n\nClassification: ${(s.cls||classify({desc:product(s).desc,dest:s.dest})).code}`;modal('Share with broker',`<p class="muted p">Copy and paste into an email to your broker. (Read-only links come with accounts.)</p><textarea class="in" rows="10" id="mTxt">${esc(txt)}</textarea>`,'Copy',()=>copy($('#mTxt').value));},
   export:()=>copy(JSON.stringify(S,null,2)),
-  reset:()=>{if(confirmModal)modal('Restore demo data?','<p class="p">This replaces everything stored in this browser with the sample data.</p>','Restore',reset);},
+  reset:()=>{if(S.shipments.length||S.products.length)modal('Load sample data?','<p class="p">This replaces what is currently in the workspace with nine example shipments.</p>','Load',reset);else reset();},
+  clearAll:()=>modal('Clear the workspace?','<p class="p">Removes all shipments, products and partners. Your company settings are kept.</p>','Clear',clearAll),
+  logout:async()=>{try{await fetch('/api/auth/logout',{method:'POST'});}catch(e){}ME=null;WS=null;MODE='anon';S=emptyState();localStorage.removeItem(KEY);showAuth();},
+  invite:()=>modal('Invite a teammate',`<div class="form"><label>Email<input class="in" id="mE" type="email" placeholder="name@factory.com"></label><label>Role<select class="in" id="mR"><option>Factory</option><option>Forwarder</option><option>Broker</option><option>Importer</option></select></label></div><p class="muted p">No email is sent in this version — share your ClearWay address with them; when they sign up with this email they join your workspace.</p>`,'Invite',async()=>{try{const r=await fetch('/api/invite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('#mE').value,role:$('#mR').value})});const j=await r.json();if(j.error)return toast(j.error);WS.invites=j.invites;route();toast('Invited');}catch(e){toast('Server not reachable');}}),
 };
 const confirmModal=true;
 function requestModal(partner,s,bs){
@@ -612,9 +642,45 @@ function commit(){
 /* =====================================================================
    Boot
    ===================================================================== */
-Object.assign(COSTS,S.costs||{});
-route();
-(async()=>{try{const r=await fetch('/api/health');const j=await r.json();window.__health=j;}catch(e){window.__health={ok:false};}
+/* =====================================================================
+   Auth screen + boot
+   ===================================================================== */
+function showAuth(tab){
+  tab=tab||'login';
+  $('#view').innerHTML=`<div class="auth"><div class="auth-card">
+    <div class="logo" style="padding:0 0 14px"><span class="mark">CW</span><span class="name">ClearWay</span></div>
+    <h1>${tab==='login'?'Sign in':'Create your account'}</h1>
+    <p class="muted">${tab==='login'?'Your shipments, products and team are saved to your workspace.':'One account per person. Your company gets its own workspace; invite your factory, forwarder and broker later.'}</p>
+    <form id="authForm" class="form">
+      ${tab==='signup'?`<label>Company (importer of record)<input class="in" name="company" placeholder="e.g. Northwind Imports LLC" required></label>`:''}
+      <label>Email<input class="in" name="email" type="email" autocomplete="username" required></label>
+      <label>Password<input class="in" name="password" type="password" autocomplete="${tab==='login'?'current-password':'new-password'}" minlength="8" required>${tab==='signup'?'<small class="muted">At least 8 characters</small>':''}</label>
+      <div class="auth-err" id="authErr"></div>
+      <button class="btn primary" style="justify-content:center">${tab==='login'?'Sign in':'Create account'}</button>
+    </form>
+    <p class="muted" style="margin-top:14px">${tab==='login'?`New here? <a href="#" id="authSwap">Create an account</a>`:`Already have an account? <a href="#" id="authSwap">Sign in</a>`}</p>
+    <p class="muted" style="font-size:12px;margin-top:18px"><a href="#" id="authLocal">Continue without an account</a> — data stays in this browser only.</p>
+  </div></div>`;
+  $('#nav').innerHTML='';$('#role').innerHTML='';$('#account').innerHTML='';
+  $('#authSwap').onclick=e=>{e.preventDefault();showAuth(tab==='login'?'signup':'login');};
+  $('#authLocal').onclick=e=>{e.preventDefault();MODE='local';S=loadLocal();Object.assign(COSTS,S.costs||{});route();};
+  $('#authForm').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target).entries());const err=$('#authErr');err.textContent='';
+    try{const r=await fetch('/api/auth/'+tab,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});const j=await r.json();if(j.error){err.textContent=j.error;return;}
+      await enterWorkspace(j.user,tab==='signup'?f.company:null);}
+    catch(ex){err.textContent='Could not reach the server.';}};
+}
+async function enterWorkspace(user,company){
+  ME=user;MODE='server';
+  try{const r=await fetch('/api/state');const j=await r.json();WS=j.workspace;S=j.state||emptyState();if(!S.settings)S.settings=emptyState().settings;if(company&&!S.settings.company)S.settings.company=company;if(!S.settings.company&&WS&&WS.name)S.settings.company=WS.name;if(!S.settings.role)S.settings.role=user.role||'Importer';}
+  catch(e){S=emptyState();}
+  Object.assign(COSTS,S.costs||{});save();if(!location.hash||location.hash==='#')location.hash='#overview';route();
+}
+(async()=>{
+  let health=null;try{const r=await fetch('/api/health');health=await r.json();}catch(e){}
+  window.__health=health||{ok:false};
+  if(health&&health.auth){
+    try{const r=await fetch('/api/auth/me');const j=await r.json();if(j.user){await enterWorkspace(j.user);}else{MODE='anon';showAuth();}}catch(e){MODE='local';S=loadLocal();Object.assign(COSTS,S.costs||{});route();}
+  } else { MODE='local';S=loadLocal();Object.assign(COSTS,S.costs||{});route(); }
   const el=$('#health');if(el)el.innerHTML=window.__health.ok?(window.__health.live?`${pill('good','Live')} Claude reads uploaded documents (${esc(window.__health.model)}).`:`${pill('warn','Simulated')} Server running without an API key.`):`${pill('crit','No server')} Open the app through <code>npm start</code> to enable extraction.`;})();
 document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#modal').classList.remove('open');});
 $('#modal').addEventListener('click',e=>{if(e.target===$('#modal'))$('#modal').classList.remove('open');});

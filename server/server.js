@@ -15,6 +15,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const rules = require('../public/rules.js');
 
 loadDotEnv();
@@ -23,13 +24,22 @@ const API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
 const PUBLIC = path.join(__dirname, '..', 'public');
 const MAX_BODY = 40 * 1024 * 1024;
+const DATA = path.join(__dirname, '..', 'data');
+fs.mkdirSync(path.join(DATA, 'workspaces'), { recursive: true });
+const readJsonFile = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+const writeJsonFile = (f, o) => fs.writeFileSync(f, JSON.stringify(o, null, 1));
+const USERS = () => readJsonFile(path.join(DATA, 'users.json'), { users: [], sessions: {} });
+const saveUsers = (u) => writeJsonFile(path.join(DATA, 'users.json'), u);
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
 
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
-    if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, live: !!API_KEY, model: API_KEY ? MODEL : null });
+    if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, live: !!API_KEY, model: API_KEY ? MODEL : null, auth: true });
+    if (url.pathname.startsWith('/api/auth/')) return auth(req, res, url);
+    if (url.pathname === '/api/state') return state(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/invite') return invite(req, res);
     if (req.method === 'POST' && url.pathname === '/api/analyze') return analyze(req, res);
     if (req.method === 'GET' && url.pathname === '/api/tariff') return tariff(url, res);
     if (req.method === 'GET' && url.pathname === '/api/rates') return rates(url, res);
@@ -46,6 +56,57 @@ server.listen(PORT, () => {
   console.log(`ClearWay running at http://localhost:${PORT}`);
   console.log(API_KEY ? `Extraction: live (${MODEL})` : 'Extraction: SIMULATED — set ANTHROPIC_API_KEY in .env to analyze real documents');
 });
+
+/* ------------------------------------------------------------------
+   Accounts & workspaces (zero-dependency: scrypt password hashes, cookie sessions, JSON files in data/)
+   ------------------------------------------------------------------ */
+const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=').map(decodeURIComponent)).filter(x => x[0]));
+function currentUser(req) { const u = USERS(); const sid = cookies(req).cw_session; const s = sid && u.sessions[sid]; if (!s) return null; const user = u.users.find(x => x.id === s.userId); return user ? { user, db: u } : null; }
+function hashPw(pw, salt) { salt = salt || crypto.randomBytes(16).toString('hex'); return salt + ':' + crypto.scryptSync(pw, salt, 32).toString('hex'); }
+function checkPw(pw, stored) { const [salt, h] = stored.split(':'); return crypto.timingSafeEqual(Buffer.from(h, 'hex'), crypto.scryptSync(pw, salt, 32)); }
+function setSession(res, db, userId) { const sid = crypto.randomBytes(24).toString('hex'); db.sessions[sid] = { userId, at: Date.now() }; saveUsers(db); res.setHeader('set-cookie', `cw_session=${sid}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}`); }
+const publicUser = u => ({ id: u.id, email: u.email, name: u.name, workspaceId: u.workspaceId, role: u.role });
+const wsFile = id => path.join(DATA, 'workspaces', id + '.json');
+
+async function auth(req, res, url) {
+  const action = url.pathname.split('/')[3];
+  if (req.method === 'GET' && action === 'me') { const c = currentUser(req); if (!c) return json(res, 200, { user: null }); const ws = readJsonFile(wsFile(c.user.workspaceId), null); return json(res, 200, { user: publicUser(c.user), workspace: ws && { id: ws.id, name: ws.name, members: ws.members } }); }
+  const body = (await readJson(req)) || {};
+  const email = String(body.email || '').trim().toLowerCase();
+  if (action === 'signup') {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json(res, 400, { error: 'Enter a valid email address.' });
+    if (String(body.password || '').length < 8) return json(res, 400, { error: 'Password must be at least 8 characters.' });
+    const db = USERS(); if (db.users.some(u => u.email === email)) return json(res, 409, { error: 'An account with this email already exists — sign in instead.' });
+    // invited? join the inviting workspace
+    let wsId = null, role = 'Importer';
+    for (const f of fs.readdirSync(path.join(DATA, 'workspaces'))) { const ws = readJsonFile(path.join(DATA, 'workspaces', f), null); const inv = ws && (ws.invites || []).find(i => i.email === email); if (inv) { wsId = ws.id; role = inv.role; ws.invites = ws.invites.filter(i => i.email !== email); ws.members.push({ email, role }); writeJsonFile(wsFile(ws.id), ws); break; } }
+    if (!wsId) { wsId = 'ws_' + crypto.randomBytes(6).toString('hex'); writeJsonFile(wsFile(wsId), { id: wsId, name: body.company || email.split('@')[1], members: [{ email, role: 'Importer' }], invites: [], state: null, updatedAt: Date.now() }); }
+    const user = { id: 'u_' + crypto.randomBytes(6).toString('hex'), email, name: body.name || '', pw: hashPw(String(body.password)), workspaceId: wsId, role, createdAt: Date.now() };
+    db.users.push(user); setSession(res, db, user.id);
+    return json(res, 200, { user: publicUser(user) });
+  }
+  if (action === 'login') {
+    const db = USERS(); const user = db.users.find(u => u.email === email);
+    if (!user || !checkPw(String(body.password || ''), user.pw)) return json(res, 401, { error: 'Email or password is incorrect.' });
+    setSession(res, db, user.id); return json(res, 200, { user: publicUser(user) });
+  }
+  if (action === 'logout') { const db = USERS(); delete db.sessions[cookies(req).cw_session]; saveUsers(db); res.setHeader('set-cookie', 'cw_session=; Path=/; Max-Age=0'); return json(res, 200, { ok: true }); }
+  json(res, 404, { error: 'unknown auth action' });
+}
+async function state(req, res) {
+  const c = currentUser(req); if (!c) return json(res, 401, { error: 'sign in required' });
+  const ws = readJsonFile(wsFile(c.user.workspaceId), null); if (!ws) return json(res, 404, { error: 'workspace missing' });
+  if (req.method === 'GET') return json(res, 200, { state: ws.state, updatedAt: ws.updatedAt, workspace: { id: ws.id, name: ws.name, members: ws.members, invites: ws.invites } });
+  if (req.method === 'PUT') { const body = await readJson(req); if (!body || typeof body !== 'object') return json(res, 400, { error: 'bad json' }); ws.state = body.state; ws.updatedAt = Date.now(); if (body.workspaceName) ws.name = body.workspaceName; writeJsonFile(wsFile(ws.id), ws); return json(res, 200, { ok: true, updatedAt: ws.updatedAt }); }
+  json(res, 405, { error: 'method not allowed' });
+}
+async function invite(req, res) {
+  const c = currentUser(req); if (!c) return json(res, 401, { error: 'sign in required' });
+  const body = (await readJson(req)) || {}; const email = String(body.email || '').trim().toLowerCase(); const role = ['Importer', 'Factory', 'Forwarder', 'Broker'].includes(body.role) ? body.role : 'Factory';
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json(res, 400, { error: 'Enter a valid email address.' });
+  const ws = readJsonFile(wsFile(c.user.workspaceId), null); ws.invites = (ws.invites || []).filter(i => i.email !== email); ws.invites.push({ email, role, at: Date.now(), by: c.user.email }); writeJsonFile(wsFile(ws.id), ws);
+  json(res, 200, { ok: true, invites: ws.invites, note: 'No email is sent in this version: tell them to sign up at your ClearWay address with this email and they will land in your workspace.' });
+}
 
 /* ------------------------------------------------------------------ */
 async function analyze(req, res) {
