@@ -168,6 +168,7 @@ function bind(root){
   root.querySelectorAll('[data-act]').forEach(el=>el.onclick=e=>{e.stopPropagation();ACTIONS[el.dataset.act]&&ACTIONS[el.dataset.act](el.dataset,el);});
   root.querySelectorAll('[data-filter]').forEach(el=>el.oninput=()=>route());
   bindTracking(root);
+  mountMaps(root);
   root.querySelectorAll('.rmap .ship').forEach(el=>{el.style.cursor='pointer';el.onclick=()=>location.hash='shipment-'+el.dataset.id;const s=S.shipments.find(x=>x.id===el.dataset.id);if(s){const t=document.createElementNS('http://www.w3.org/2000/svg','title');t.textContent=`${product(s).name} · ${s.id} · ${Math.round(progressOf(s)*100)}%`;el.appendChild(t);}});
 }
 
@@ -228,7 +229,7 @@ function pageOverview(){
 
   <section class="card">
     <div class="card-h"><h2>On the move</h2><span class="hint">${active.filter(s=>stageOf(s)===5).length} in transit · ${active.filter(s=>stageOf(s)<5).length} not yet departed · click a dot to open</span></div>
-    <div class="map-wrap">${drawMap(S.shipments.filter(s=>stageOf(s)<=6).map(s=>({id:s.id,from:polOf(s),to:podOf(s),progress:progressOf(s),status:stageOf(s)>=6?'done':stageOf(s)>=5?status(s):'plan'})),{width:1100,height:330})}</div>
+    ${mapBlock('home',S.shipments.filter(s=>stageOf(s)<=6).map(s=>({id:s.id,label:product(s).name,sub:s.id+' · '+s.dest+' · '+s.mode+'<br>',from:polOf(s),to:podOf(s),progress:progressOf(s),status:stageOf(s)>=6?'done':stageOf(s)>=5?status(s):'plan'})),{height:420,width:1100,svgH:330})}
     <div class="legend"><span><i class="dot" style="background:#5b2d86"></i>Planned route</span><span><i class="dot" style="background:var(--good)"></i>In transit, ready</span><span><i class="dot" style="background:var(--warn)"></i>In transit, items open</span><span><i class="dot" style="background:var(--crit)"></i>In transit, blocked</span><span><i class="dot" style="background:#898781"></i>Arrived</span></div>
   </section>
 
@@ -307,7 +308,7 @@ function pageShipment(id){
 
       <section class="card">
         <div class="card-h"><h2>Tracking</h2><span class="hint">${st>=5?(st>=6?'arrived':'in transit · '+Math.round(progressOf(s)*100)+'% of the way'):'not yet departed'}</span></div>
-        <div class="map-wrap">${drawMap([{id:s.id,from:polOf(s),to:podOf(s),progress:progressOf(s),status:st>=6?'done':st>=5?status(s):'plan'}],{width:900,height:300})}</div>
+        ${mapBlock('ship',[{id:s.id,label:p.name,sub:'',from:polOf(s),to:podOf(s),progress:progressOf(s),status:st>=6?'done':st>=5?status(s):'plan'}],{height:320,width:900,svgH:300,labels:true,maxZoom:4})}
         <div class="track">
           <div class="ms">${milestones(s).map(m=>`<div class="m ${m.state}"><span class="md"></span><div><b>${esc(m.name)}</b><span>${m.when?fmtD(m.when):'—'}${m.note?' · '+esc(m.note):''}</span></div></div>`).join('')}</div>
           <div class="trk-form">
@@ -365,6 +366,11 @@ function pageShipment(id){
     </div>
   </div>`;
 }
+/* a real Leaflet map when available, the SVG sketch otherwise */
+function mapBlock(key,routes,o){return `<div class="map-wrap"><div class="lmap" id="lmap-${key}" data-routes='${esc(JSON.stringify(routes))}' data-opts='${esc(JSON.stringify({labels:!!o.labels,maxZoom:o.maxZoom||5}))}' style="height:${o.height}px"></div><div class="lmap-fallback" id="lsvg-${key}" hidden>${drawMap(routes,{width:o.width,height:o.svgH})}</div></div>`;}
+function mountMaps(root){root.querySelectorAll('.lmap').forEach(el=>{const routes=JSON.parse(el.dataset.routes||'[]'),o=JSON.parse(el.dataset.opts||'{}');const fb=el.nextElementSibling;const fail=()=>{el.hidden=true;if(fb)fb.hidden=false;};
+  if(!window.L||!navigator.onLine){fail();return;}
+  try{const ok=mountLeaflet(el,routes,{...o,onClick:id=>location.hash='shipment-'+id,onFail:fail});if(!ok)fail();}catch(e){console.warn('map',e);fail();}});}
 function milestones(s){
   const st=stageOf(s);const load=new Date(s.loadDate),eta=new Date(s.eta);const d=(x,n)=>{const y=new Date(x);y.setDate(y.getDate()+n);return y;};
   const items=[['Booking confirmed',d(load,-7),st>=4],['Cargo received at '+portName(polOf(s)),d(load,-2),st>=5],[(s.mode==='Ocean'?'Departed ':'Flown from ')+portName(polOf(s)),load,st>=5],...(s.mode==='Ocean'?[['Transshipment',d(load,Math.round((eta-load)/864e5/2)),st>=5&&progressOf(s)>0.5]]:[]),['Arrived '+portName(podOf(s)),eta,st>=6],['Customs release',d(eta,2),st>=7],['Delivered',d(eta,5),st>=7&&!!s.released]];

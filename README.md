@@ -16,7 +16,7 @@ It is built for the moment *before booking*, when problems are cheap to fix — 
 
 | Page | What it does |
 |---|---|
-| **Overview** | A **route map** of every shipment on the move (origin → destination, progress dot, colour = status); what needs your attention first, with the cost of leaving it; where every shipment sits on its journey; next deadlines. |
+| **Overview** | A **route map** (Leaflet + CARTO/OpenStreetMap, great-circle routes, zoom/pan; SVG fallback offline) of every shipment on the move (origin → destination, progress dot, colour = status); what needs your attention first, with the cost of leaving it; where every shipment sits on its journey; next deadlines. |
 | **Shipments** | All shipments, sorted by what needs you first — stage, readiness, open items, cost if not fixed, next deadline. |
 | **Shipment detail** | The journey (8 stages, who owns each), a **tracking card** (route map, milestones booked → departed → arrived → released, carrier / vessel / container with a tracking link), every blocker with *why it matters* and *what it costs if not fixed*, three-way document check, classification, required certificates, landed-cost estimate. Mark items fixed, ask the supplier (English / 中文), share with the broker. |
 | **Products** | One record per product: description, markets, classification, requirements on file, certificates with expiry. Every shipment inherits it. |

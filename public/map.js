@@ -66,3 +66,32 @@ function drawMap(routes,opts){
 const api={PORTS,COUNTRIES,MARKET_COUNTRIES,portsFor,portsForMarket,defaultOrigin,defaultDest,drawMap};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;Object.assign(root,api);
 })(typeof globalThis!=='undefined'?globalThis:this);
+
+/* ---------- Real basemap (Leaflet + CARTO/OSM tiles) with great-circle routes. Falls back to drawMap() offline. ---------- */
+(function(root){
+  const PORTS=root.PORTS;
+  function gc(a,b,n){ // great-circle points between [lat,lon] a and b, longitudes unwrapped for continuity
+    const r=Math.PI/180,toV=([la,lo])=>[Math.cos(la*r)*Math.cos(lo*r),Math.cos(la*r)*Math.sin(lo*r),Math.sin(la*r)];
+    const v1=toV(a),v2=toV(b);const d=Math.acos(Math.max(-1,Math.min(1,v1[0]*v2[0]+v1[1]*v2[1]+v1[2]*v2[2])));if(d<1e-6)return [a,b];
+    const pts=[];let prev=null;for(let i=0;i<=n;i++){const t=i/n,A=Math.sin((1-t)*d)/Math.sin(d),B=Math.sin(t*d)/Math.sin(d);const x=A*v1[0]+B*v2[0],y=A*v1[1]+B*v2[1],z=A*v1[2]+B*v2[2];let lat=Math.atan2(z,Math.hypot(x,y))/r,lon=Math.atan2(y,x)/r;if(prev!=null){while(lon-prev>180)lon-=360;while(prev-lon>180)lon+=360;}prev=lon;pts.push([lat,lon]);}return pts;}
+  const COL={good:'#0ca30c',warn:'#fab219',crit:'#d03b3b',done:'#898781',plan:'#5b2d86'};
+  function mountLeaflet(el,routes,opts){
+    opts=opts||{};const L=root.L;if(!L||!el)return false;
+    if(el._map){el._map.remove();el._map=null;}
+    const map=L.map(el,{worldCopyJump:true,zoomControl:true,attributionControl:true,scrollWheelZoom:false,minZoom:1});el._map=map;
+    const tiles=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,pane:'shadowPane'}).addTo(map);
+    let failed=0;tiles.on('tileerror',()=>{failed++;if(failed>6&&opts.onFail){opts.onFail();}});
+    const bounds=[];const seen={};
+    routes.forEach(r=>{const a=PORTS[r.from],b=PORTS[r.to];if(!a||!b)return;const pts=gc([a[2],a[3]],[b[2],b[3]],72);const c=COL[r.status]||COL.plan;
+      L.polyline(pts,{color:c,weight:2.2,opacity:.8,dashArray:r.status==='done'?'4 6':null}).addTo(map).bindTooltip(`${r.label||r.id}: ${a[0]} → ${b[0]}`,{sticky:true});
+      pts.forEach(p=>bounds.push(p));
+      if(r.progress!=null&&r.progress>0&&r.progress<1){const p=pts[Math.round(r.progress*(pts.length-1))];const m=L.circleMarker(p,{radius:7,color:'#fff',weight:2,fillColor:c,fillOpacity:1}).addTo(map);m.bindTooltip(`<b>${r.label||r.id}</b><br>${r.sub||''}${Math.round(r.progress*100)}% of the way`,{direction:'top',offset:[0,-8]});if(opts.onClick)m.on('click',()=>opts.onClick(r.id));
+        L.circleMarker(p,{radius:14,color:c,weight:0,fillColor:c,fillOpacity:.18,interactive:false}).addTo(map);}
+      [[r.from,a],[r.to,b]].forEach(([code,p])=>{if(seen[code])return;seen[code]=1;L.circleMarker([p[2],p[3]],{radius:4,color:'#0b0b0b',weight:1.5,fillColor:'#fff',fillOpacity:1}).addTo(map).bindTooltip(p[0]+' ('+p[1]+')',{direction:'right',offset:[6,0],permanent:!!opts.labels,className:'port-lab'});});
+    });
+    if(bounds.length)map.fitBounds(bounds,{padding:[28,28],maxZoom:opts.maxZoom||5});else map.setView([20,0],2);
+    return true;
+  }
+  root.mountLeaflet=mountLeaflet;root.greatCircle=gc;
+})(typeof globalThis!=='undefined'?globalThis:this);
