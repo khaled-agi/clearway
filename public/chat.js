@@ -43,14 +43,21 @@ const EU_CC=['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','I
 const PLACE_NAMES={US:['united states','usa','u.s.','u.s.a','us','america','the states'],CA:['canada'],GB:['united kingdom','uk','u.k.','britain','great britain','england','scotland','wales'],CN:['china','mainland china','prc'],HK:['hong kong'],TW:['taiwan'],VN:['vietnam','viet nam'],TH:['thailand'],ID:['indonesia'],MY:['malaysia'],SG:['singapore'],IN:['india'],BD:['bangladesh'],PK:['pakistan'],LK:['sri lanka'],KH:['cambodia'],KR:['south korea','korea'],JP:['japan'],TR:['turkey','türkiye','turkiye'],AE:['uae','united arab emirates','dubai'],EG:['egypt'],MX:['mexico'],BR:['brazil'],AU:['australia'],ZA:['south africa'],NG:['nigeria'],DE:['germany','deutschland'],FR:['france'],NL:['netherlands','holland'],BE:['belgium'],ES:['spain'],IT:['italy'],PL:['poland'],PT:['portugal'],GR:['greece'],IE:['ireland'],AT:['austria'],SE:['sweden'],DK:['denmark'],FI:['finland'],CZ:['czech republic','czechia'],RO:['romania'],HU:['hungary'],EU:['eu','europe','european union']};
 const CITIES={CN:['shanghai','shenzhen','guangzhou','canton','ningbo','yiwu','qingdao','xiamen','tianjin','beijing','dongguan','foshan','hangzhou','suzhou','wuhan','chengdu','chongqing','dalian','fuzhou','zhongshan','shantou','jinhua','wenzhou','huizhou'],HK:['kowloon'],VN:['ho chi minh','saigon','hanoi','haiphong','da nang'],TH:['bangkok','laem chabang'],IN:['mumbai','delhi','new delhi','chennai','bangalore','bengaluru','kolkata','tirupur','ahmedabad','nhava sheva'],BD:['dhaka','chittagong'],PK:['karachi','lahore','sialkot'],ID:['jakarta','surabaya'],MY:['kuala lumpur','penang','port klang'],KR:['seoul','busan'],JP:['tokyo','osaka','yokohama'],TW:['taipei','kaohsiung'],TR:['istanbul','izmir','mersin'],US:['new york','los angeles','long beach','chicago','houston','miami','seattle','savannah','oakland','dallas','atlanta','san francisco','boston','newark'],CA:['montreal','montréal','toronto','vancouver','calgary','edmonton','ottawa','winnipeg','halifax','quebec city','québec','mississauga','prince rupert'],GB:['london','manchester','birmingham','felixstowe','southampton','liverpool','glasgow','edinburgh'],DE:['hamburg','berlin','munich','frankfurt','cologne','düsseldorf','dusseldorf','bremen'],NL:['rotterdam','amsterdam'],BE:['antwerp','brussels'],FR:['paris','le havre','marseille','lyon'],ES:['madrid','barcelona','valencia'],IT:['milan','genoa','rome','naples'],PL:['warsaw','gdansk'],MX:['mexico city','manzanillo','monterrey','guadalajara'],AE:['jebel ali','abu dhabi'],AU:['sydney','melbourne','brisbane']};
 function marketOf(cc){if(cc==='US'||cc==='CA'||cc==='CN')return cc;if(cc==='GB')return 'UK';if(cc==='EU'||EU_CC.includes(cc))return 'EU';return null;}
+const lev=(a,b)=>{const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length];};
 function resolvePlace(seg){
   seg=' '+String(seg||'').toLowerCase().replace(/[(),.;:!?]/g,' ').replace(/\s+/g,' ')+' ';if(seg.trim().length<2)return null;
   let best=null;const consider=(cc,name,city)=>{const i=seg.indexOf(' '+name+' ');if(i<0)return;if(!best||i>best.i||(i===best.i&&name.length>best.len))best={i,len:name.length,cc,city};};
   Object.entries(PLACE_NAMES).forEach(([cc,names])=>names.forEach(n=>consider(cc,n,null)));
   Object.entries(CITIES).forEach(([cc,names])=>names.forEach(n=>consider(cc,n,n)));
+  if(!best){ // typo tolerance: "ghangzhou", "shenzen", "montral", "vietnm"
+        const words=seg.trim().split(' ');
+    const tryList=(cc,names,isCity)=>names.forEach(n=>{if(n.length<5)return;const k=n.split(' ').length;for(let i=0;i+k<=words.length;i++){const w=words.slice(i,i+k).join(' ');if(Math.abs(w.length-n.length)>2)continue;const dist=lev(w,n);if(dist<=(n.length<7?1:2)&&(!best||dist<best.dist||(dist===best.dist&&i>best.i)))best={i,len:n.length,cc,city:isCity?n:null,dist};}});
+    Object.entries(PLACE_NAMES).forEach(([cc,names])=>tryList(cc,names,false));
+    Object.entries(CITIES).forEach(([cc,names])=>tryList(cc,names,true));
+  }
   if(!best)return null;
   // a country named after a city ("Guangzhou China", "Montreal, Canada") is preferred; keep the city
-  let city=best.city; if(!city){Object.entries(CITIES).forEach(([cc,names])=>{if(cc===best.cc)names.forEach(n=>{if(seg.includes(' '+n+' '))city=n;});});}
+  let city=best.city; if(!city){const ws=seg.trim().split(' ');(CITIES[best.cc]||[]).forEach(n=>{if(city)return;if(seg.includes(' '+n+' '))city=n;else if(n.length>=5&&!n.includes(' ')&&ws.some(w=>Math.abs(w.length-n.length)<=2&&lev(w,n)<=(n.length<7?1:2)))city=n;});}
   return {country:best.cc==='EU'?'DE':best.cc,market:marketOf(best.cc),city:city?city.replace(/\b\w/g,c=>c.toUpperCase()):null};
 }
 function parseLocal(text){
@@ -113,6 +120,10 @@ const ROLE_PROMPTS={
   Broker:[['Which assessments are waiting for my review?'],['Show me the classification and rulings for the plush toy.'],['Which shipments can be entered this week, and what\'s missing on the rest?'],['Open the document pack for SH-1047.']],
 };
 
+function modelLabel(j){const h=window.__health||{};const prov=(j&&j.provider)||h.provider;const name=({groq:'Groq',ollama:'Ollama',openai:'local model',anthropic:'Claude'})[prov]||prov||'AI';return name+' · '+((j&&j.model)||h.model||'');}
+/* tiny safe markdown: **bold**, bullets, paragraphs */
+function md(t){const lines=esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').split(/\n/);let out='',inList=false;lines.forEach(l=>{const m=l.match(/^\s*(?:[-•*]|\d+[.)])\s+(.*)/);if(m){if(!inList){out+='<ul class="chat-list">';inList=true;}out+='<li>'+m[1]+'</li>';}else{if(inList){out+='</ul>';inList=false;}if(l.trim())out+='<p>'+l+'</p>';}});if(inList)out+='</ul>';return out;}
+
 /* ---------------- chat state ---------------- */
 const chatOwner=()=>(ME&&ME.email)||'local';
 function chats(){S.chats=S.chats||[];return S.chats.filter(c=>(c.owner||'local')===chatOwner()||(!c.owner&&!ME));}
@@ -151,8 +162,25 @@ async function sendChat(text){
   const thinking={role:'bot',html:'<span class="muted">Thinking…</span>'};c.messages.push(thinking);route();scrollChat();
   let parsed=null;
   if(window.__health&&window.__health.live){try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,role:myRole(),context:workspaceContext()})});const j=await r.json();if(j&&j.intent){parsed=j;if(j.productName){const pr=S.products.find(x=>x.name.toLowerCase()===String(j.productName).toLowerCase());if(pr)parsed.productId=pr.id;}}}catch(e){}}
-  if(!parsed)parsed=parseLocal(text);
-  const reply=await answer(parsed,text);
+  const local=parseLocal(text);
+  if(!parsed)parsed=local;
+  else{ // deterministic parser is authoritative for places, weights and quantities; the model for intent, product and free answers
+    ['origin','originCity','dest','destCountry','destCity','weightKg','weightText','value','shipmentId','productId'].forEach(k=>{if(local[k]!=null)parsed[k]=local[k];});
+    if(local.weightKg){parsed.units=local.units||null;if(!local.mode)parsed.mode=local.mode||parsed.mode;}
+    if(local.mode)parsed.mode=local.mode; else if(local.weightKg&&local.weightKg<70)parsed.mode='Express';
+    if(local.units)parsed.units=local.units;
+    if(local.intent!=='help'&&parsed.intent==='help')parsed.intent=local.intent;
+    if(parsed.desc)parsed.desc=String(parsed.desc).replace(/^[\d.,]+\s*(lbs?|kg|units?|pcs)\s*(of\s+)?/i,'');
+  }
+  let reply=await answer(parsed,text);
+  if(window.__health&&window.__health.live&&!(parsed.intent==='answer'&&parsed.answer)&&!/^(start)$/.test(parsed.intent)){
+    thinking.html=`<span class="muted">Writing an answer with ${esc(modelLabel())}…</span>`;route();scrollChat();
+    try{const facts=String(reply.html||'').replace(/<li>/g,'\n- ').replace(/<\/p>|<br>/g,'\n').replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&#39;/g,"'").replace(/\n{3,}/g,'\n\n').trim();
+      const r=await fetch('/api/chat/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,role:myRole(),facts,context:/status|search|followups|deadlines|help|find/.test(parsed.intent)?workspaceContext():null})});const j=await r.json();
+      if(j.text){reply={...reply,html:`<div class="ai-text">${md(j.text)}</div><div class="ai-src">${esc(modelLabel(j))} · grounded in ClearWay's rules and your workspace</div><details class="ai-details"${parsed.intent==='check'?'':' open'}><summary>Details ClearWay computed</summary>${reply.html}</details>`};}
+      else if(j.error){reply={...reply,html:reply.html+`<div class="ai-src">AI reply unavailable: ${esc(j.error)}</div>`};}}
+    catch(e){}
+  }
   c.messages.splice(c.messages.indexOf(thinking),1);c.messages.push({role:'bot',...reply});save();route();scrollChat();
 }
 function scrollChat(){const el=$('#chatScroll');if(el)el.scrollTop=el.scrollHeight;}
@@ -169,10 +197,10 @@ async function answer(p,text){
     const cov=coverage({desc,attrs},dest);
     const units=p.units||(p.weightKg?Math.max(1,Math.round(p.weightKg)):1000), value=p.value||(p.weightKg?Math.round(p.weightKg*4):units*9);
     const missing=reqs.filter(r=>!(prod&&(prod.have||{})[r.id]));
-    const worst=missing.filter(r=>r.kind==='cert').slice(0,3).map(r=>impact('cert',{units,value})).reduce((a,i)=>({low:a.low+i.low,high:a.high+i.high,atRisk:Math.max(a.atRisk,i.atRisk)}),{low:0,high:0,atRisk:0});
+    const worst=missing.filter(r=>r.kind==='cert').slice(0,3).map(r=>impact('cert',{units,value,mode,weightKg:p.weightKg})).reduce((a,i)=>({low:a.low+i.low,high:a.high+i.high,atRisk:Math.max(a.atRisk,i.atRisk)}),{low:0,high:0,atRisk:0});
     const certs=reqs.filter(r=>r.kind==='cert'), labels=reqs.filter(r=>r.kind.startsWith('label')), filings=reqs.filter(r=>/filing|isf|registration/.test(r.kind));
     const onAttrs=Object.keys(attrs).filter(k=>attrs[k]&&k!=='consumer').map(k=>(ATTRS.find(a=>a[0]===k)||[k,k])[1]);
-    const html=`<p><b>${esc(desc.charAt(0).toUpperCase()+desc.slice(1))}</b> — ${p.originCity?esc(p.originCity)+', ':''}${esc(COUNTRIES[origin]||origin)} → ${p.destCity?esc(p.destCity)+', ':''}${esc(p.destCountry&&p.destCountry!==dest&&COUNTRIES[p.destCountry]?COUNTRIES[p.destCountry]+' (EU)':(MARKETS.find(m=>m[0]===dest)||[dest,dest])[1])}, ${mode.toLowerCase()}${p.units?`, ${p.units.toLocaleString()} units`:''}${p.weightText?`, ${esc(p.weightText)} (${p.weightKg} kg)`:''}${p.value?`, ${money(p.value)}`:''}.${!p.dest?` <span class="muted">(No destination given — assumed ${dest}.)</span>`:''}</p>
+    const html=`<p><b>${esc(desc.charAt(0).toUpperCase()+desc.slice(1))}</b> — ${p.originCity?esc(p.originCity)+', ':''}${esc(COUNTRIES[origin]||origin)} → ${p.destCity?esc(p.destCity)+', ':''}${esc(p.destCountry&&p.destCountry!==dest&&COUNTRIES[p.destCountry]?COUNTRIES[p.destCountry]+' (EU)':(MARKETS.find(m=>m[0]===dest)||[dest,dest])[1])}, ${mode.toLowerCase()}${p.units&&!p.weightText?`, ${p.units.toLocaleString()} units`:''}${p.weightText?`, ${esc(p.weightText)} (${p.weightKg} kg)`:''}${p.value?`, ${money(p.value)}`:''}.${!p.dest?` <span class="muted">(No destination given — assumed ${dest}.)</span>`:''}</p>
       <p>I read it as: ${onAttrs.length?onAttrs.map(a=>`<span class="pill neutral" style="min-width:0">${esc(a)}</span>`).join(' '):'<span class="muted">no special attributes detected</span>'} — correct these on the product if I'm wrong, the rules follow from them.</p>
       <div class="kv" style="padding:6px 0"><span>Likely classification</span><b>${esc(cls.code)} ${pill(cls.conf>=85?'good':'warn',cls.conf+'%')} <span class="muted">${esc(cls.text)} · duty ${esc(cls.duty)}</span></b></div>
       <p><b>${reqs.length} requirements</b> for ${dest} — ${certs.length} certificates/test reports the factory must supply, ${labels.length} label elements, ${filings.length} filings/registrations on your side. ${pill(cov.level==='good'?'good':cov.level==='partial'?'warn':'crit','rule coverage: '+cov.level)}</p>

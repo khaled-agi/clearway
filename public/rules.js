@@ -25,11 +25,14 @@ const COSTS={
 /* ---------- impact model: what a blocker costs if NOT fixed ---------- */
 /* returns {low, high, days, atRisk, why, items:[[label,amount]]}  */
 function impact(kind, ctx){
-  const units=Number(ctx.units)||1000, value=Number(ctx.value)||units*9, containers=Math.max(1,Math.ceil(units/6000));
-  const C=COSTS; const line=(l,a)=>[l,Math.round(a)];
+  const units=Number(ctx.units)||1000, value=Number(ctx.value)||units*9;
+  /* parcels and small courier shipments are held in a courier facility, not a container terminal */
+  const small=ctx.mode==='Express'||(ctx.weightKg&&ctx.weightKg<150)||value<2500;
+  const containers=small?1:Math.max(1,Math.ceil(units/6000));
+  const C=small?{...COSTS,examXray:60,examIntensive:150,demurragePerDay:15,brokerHandling:120,storagePerDayPGA:15,relabelPerUnit:COSTS.relabelPerUnit}:COSTS; const line=(l,a)=>[l,Math.round(a)];
   switch(kind){
     case 'qty': case 'consignee': case 'weight': case 'desc': case 'hs-mismatch': {
-      const items=[line('Exam (x-ray → tailgate)',C.examXray*containers),line(`Demurrage ~${C.delayDaysDoc} days`,C.demurragePerDay*containers*C.delayDaysDoc),line('Broker handling / amendment',C.brokerHandling)];
+      const items=[line(small?'Courier inspection / hold':'Exam (x-ray → tailgate)',C.examXray*containers),line(small?`Courier storage ~${C.delayDaysDoc} days`:`Demurrage ~${C.delayDaysDoc} days`,C.demurragePerDay*containers*C.delayDaysDoc),line('Broker handling / amendment',C.brokerHandling)];
       const sum=items.reduce((a,b)=>a+b[1],0);
       return {low:Math.round(sum*0.6),high:Math.round(sum*1.6),days:C.delayDaysDoc,atRisk:0,items,
         why:'CBP cross-checks invoice, packing list and transport document line by line. Numbers that disagree are the single most common reason a container is pulled for exam, and the importer pays for the exam and every day of storage.'};
@@ -45,7 +48,7 @@ function impact(kind, ctx){
       return {low:sum,high:Math.round(sum*2),days:C.delayDaysDoc,atRisk:0,items,why:'The broker cannot prepare the entry without the full document set, so the clock starts the day the vessel arrives.'};
     }
     case 'cert': { // FCC / CPSC / FDA / CE / EN71
-      const items=[line('Intensive exam + PGA review',C.examIntensive*containers),line(`Bonded storage ~${C.delayDaysPGA} days`,C.storagePerDayPGA*C.delayDaysPGA),line('Broker + agency correspondence',C.brokerHandling*2)];
+      const items=[line(small?'Agency hold / inspection':'Intensive exam + PGA review',C.examIntensive*containers),line(`Bonded storage ~${C.delayDaysPGA} days`,C.storagePerDayPGA*C.delayDaysPGA),line('Broker + agency correspondence',C.brokerHandling*2)];
       const sum=items.reduce((a,b)=>a+b[1],0);
       return {low:sum,high:Math.round(sum*1.5),days:C.delayDaysPGA,atRisk:value,items,why:'Regulated products without the certificate are detained by the agency (FDA, CPSC, FCC…). If the product cannot be brought into compliance it is refused, re-exported or destroyed at your cost — the whole shipment value is at risk.'};
     }

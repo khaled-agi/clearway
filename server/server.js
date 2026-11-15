@@ -46,6 +46,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/tariff') return tariff(url, res);
     if (req.method === 'POST' && url.pathname === '/api/assess') return assess(req, res);
     if (req.method === 'POST' && url.pathname === '/api/chat') return chatIntent(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/chat/reply') return chatReply(req, res);
     if (req.method === 'GET' && url.pathname === '/api/measures') return measures(url, res);
     if (req.method === 'GET' && url.pathname === '/api/rulings') return rulings(url, res);
     if (req.method === 'GET' && url.pathname === '/api/kb') return json(res, 200, kb.status());
@@ -262,6 +263,20 @@ async function assess(req, res) {
 /* ------------------------------------------------------------------
    Chat intent extraction — small, fast, structured. The browser does the rest with local data.
    ------------------------------------------------------------------ */
+const REPLY_SYSTEM = `You are ClearWay's assistant for small importers and their factories, forwarders and brokers. You write the reply the user reads.
+Rules:
+- Use ONLY the facts provided (ClearWay's computed requirements, classification, costs and workspace records). Do not add regulations, numbers or deadlines that are not in the facts. If something is uncertain or coverage is marked thin/partial, say a licensed broker should confirm.
+- Lead with the direct answer in 1–2 sentences, then what matters most and why, then the first 2–4 concrete next steps.
+- Be specific: name the requirements, agencies, codes, amounts and record ids from the facts.
+- Plain, warm, professional. Under 170 words. Use short paragraphs and "- " bullets; **bold** sparingly. No headings, no tables, no preamble like "Sure".`;
+async function chatReply(req, res) {
+  const b = (await readJson(req)) || {};
+  if (!llm.enabled()) return json(res, 200, { simulated: true });
+  const user = `User (${b.role || 'Importer'}) asked: """${String(b.text || '').slice(0, 1200)}"""\n\nFacts computed by ClearWay:\n${String(b.facts || '').slice(0, 9000)}${b.context ? '\n\nWorkspace snapshot (JSON, may be truncated):\n' + JSON.stringify(b.context).slice(0, 6000) : ''}`;
+  try { const out = await llm.complete({ system: REPLY_SYSTEM, user, maxTokens: 900, json: false, fast: false }); json(res, 200, { text: out.text.trim(), model: out.model, provider: out.provider }); }
+  catch (e) { json(res, 200, { error: e.message }); }
+}
+
 async function chatIntent(req, res) {
   const b = (await readJson(req)) || {};
   if (!llm.enabled()) return json(res, 200, { simulated: true });
