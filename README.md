@@ -89,6 +89,36 @@ Every blocker carries an estimate of what it costs if shipped as-is — exam fee
 
 ![shipment](docs/shipment.png)
 
+## Running with a local AI model (private, free)
+
+ClearWay works with three kinds of model, chosen in `.env` — the rest of the app doesn't change:
+
+| `LLM_PROVIDER` | What it is | Reads PDFs | Reads images/scans | Web-searched assessments | Data leaves your machine |
+|---|---|---|---|---|---|
+| `ollama` | Local model via [Ollama](https://ollama.com) | text PDFs (built-in extractor) | with `OLLAMA_VISION_MODEL` | no — "model knowledge only" | **no** |
+| `openai` | Any OpenAI-compatible local server: LM Studio, llama.cpp, vLLM, LocalAI | text PDFs | with `OPENAI_VISION_MODEL` | no | no (if local) |
+| `anthropic` | Claude | yes, natively | yes | **yes**, with sources | yes (to Anthropic) |
+| *(empty)* | No model | — | — | — | — |
+
+**Set up Ollama (Mac):**
+```bash
+brew install ollama            # or download from ollama.com
+ollama serve                   # leave running (the Mac app does this for you)
+ollama pull qwen2.5:14b        # ~9 GB; use qwen2.5:7b on machines with < 16 GB RAM
+ollama pull qwen2.5vl:7b       # optional — reads photos/scans of documents
+```
+Then in `.env`:
+```
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=qwen2.5:14b
+OLLAMA_VISION_MODEL=qwen2.5vl:7b
+```
+Restart `npm start`; the terminal prints `Model: ollama · qwen2.5:14b (local, nothing leaves this machine) · ready`, and Settings → AI model shows the same. If a model isn't pulled, both tell you the exact `ollama pull` command.
+
+Trade-offs to know: local models are good at extraction, intent and structured output, weaker on exact legal citations. Assessments made locally are labelled *model knowledge only (no web search) — verify sources*, and the broker-review stamp matters more. A common setup is local for documents and chat (private data) and Claude only for assessments, which contain no customer documents.
+
+Code: `server/llm.js` is the single model interface (`complete`, `health`), including a dependency-free PDF text extractor for local models.
+
 ## Accounts
 
 Run the server and open the app: you'll be asked to **sign in or create an account**. Each company gets a workspace saved on the server (`data/`, git-ignored) — shipments, products, partners, settings. Invite your factory, forwarder and broker from **Settings → Team**; when they sign up with the invited email they land in your workspace with that role. New workspaces start empty with a three-step getting-started checklist; sample data is opt-in.
@@ -154,7 +184,7 @@ Returns `{ simulated: false, ex: { inv, pl, bl }, classification: { code, text, 
 
 | Piece | Status |
 |---|---|
-| Document extraction | Real when an API key is set (Claude reads the files). Simulated otherwise. |
+| Document extraction | Real with any configured model (local via Ollama/LM Studio, or Claude). Simulated with none. |
 | Three-way cross-check | Real logic, runs on whatever was extracted. |
 | Regulatory checklist | Keyword rules in `rules.js` — a starting point, **not legal advice**. Needs a maintained rules table per market. |
 | HS classification | Claude's suggestion when live; keyword lookup otherwise. Production should call the HTS/TARIC schedule + CBP CROSS / BTI rulings and keep a broker in the loop. |

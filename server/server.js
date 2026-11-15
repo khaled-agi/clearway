@@ -7,7 +7,7 @@
  *                      → { ex:{inv,pl,bl}, classification, simulated:boolean, notes:[...] }
  *   GET  /api/health    → { ok, live:boolean, model }
  *
- * With ANTHROPIC_API_KEY set, extraction + classification are done by Claude reading the
+ * With a model configured (LLM_PROVIDER=ollama | openai | anthropic — see server/llm.js), extraction + classification are done by the model reading the
  * actual documents (PDF, images, CSV/TXT). Without a key the endpoint answers { simulated:true }
  * and the browser falls back to its built-in simulation so the UI still works end to end.
  */
@@ -18,6 +18,7 @@ const path = require('path');
 const crypto = require('crypto');
 const rules = require('../public/rules.js');
 const kb = require('./knowledge.js');
+const llm = require('./llm.js');
 
 loadDotEnv();
 const PORT = Number(process.env.PORT || 3000);
@@ -37,7 +38,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
-    if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, live: !!API_KEY, model: API_KEY ? MODEL : null, auth: true });
+    if (req.method === 'GET' && url.pathname === '/api/health') { const h = await llm.health(); return json(res, 200, { ok: true, auth: true, live: h.live, model: h.model, provider: h.provider, local: h.local, web: h.web, vision: h.vision, llm: h }); }
     if (url.pathname.startsWith('/api/auth/')) return auth(req, res, url);
     if (url.pathname === '/api/state') return state(req, res);
     if (req.method === 'POST' && url.pathname === '/api/invite') return invite(req, res);
@@ -62,7 +63,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`ClearWay running at http://localhost:${PORT}`);
-  console.log(API_KEY ? `Extraction: live (${MODEL})` : 'Extraction: SIMULATED — set ANTHROPIC_API_KEY in .env to analyze real documents');
+  llm.health().then(h => console.log(h.provider === 'none' ? 'Model: none — rules + simulation. Set LLM_PROVIDER (ollama | openai | anthropic) in .env.' : `Model: ${h.provider} · ${h.model}${h.local ? ' (local, nothing leaves this machine)' : ''} · ${h.live ? 'ready' : 'NOT READY — ' + (h.error || (h.missing && h.missing.length ? 'run: ollama pull ' + h.missing.join(' && ollama pull ') : 'check configuration'))}`));
 });
 
 /* ------------------------------------------------------------------
@@ -125,7 +126,7 @@ async function analyze(req, res) {
   const { desc = '', dest = 'US', mode = 'Ocean', docs = {} } = body;
   const notes = [];
 
-  if (!API_KEY) return json(res, 200, { simulated: true, notes: ['ANTHROPIC_API_KEY not set; browser will simulate extraction.'] });
+  if (!llm.enabled()) return json(res, 200, { simulated: true, notes: ['No model configured; browser will simulate extraction.'] });
 
   const content = [];
   const docNames = { inv: 'COMMERCIAL INVOICE', pl: 'PACKING LIST', bl: 'BILL OF LADING / AIR WAYBILL', certs: 'CERTIFICATE / TEST REPORT', art: 'LABEL OR PACKAGING ARTWORK' };
@@ -144,18 +145,9 @@ async function analyze(req, res) {
 
   content.push({ type: 'text', text: buildPrompt({ desc, dest, mode, present: Object.fromEntries(['inv', 'pl', 'bl'].map(k => [k, !!(docs[k] || []).some(f => f && f.data)])) }) });
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 2000, temperature: 0, system: SYSTEM, messages: [{ role: 'user', content }] }),
-  });
-  if (!r.ok) {
-    const t = await r.text();
-    console.error('Anthropic API error', r.status, t.slice(0, 500));
-    return json(res, 200, { simulated: true, notes: [`Extraction service error ${r.status}; browser will simulate.`] });
-  }
-  const data = await r.json();
-  const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+  let out; try { out = await llm.complete({ system: SYSTEM, content, maxTokens: 2000, json: true }); }
+  catch (e) { console.error('extraction error', e.message); return json(res, 200, { simulated: true, notes: [`Extraction failed: ${e.message}. Browser will simulate.`] }); }
+  const text = out.text; (out.notes || []).forEach(n => notes.push(n));
   const parsed = extractJson(text);
   if (!parsed) return json(res, 200, { simulated: true, notes: ['Could not parse extraction result; browser will simulate.'] });
 
@@ -167,7 +159,7 @@ async function analyze(req, res) {
   } else {
     classification = rules.classify({ desc, dest });
   }
-  json(res, 200, { simulated: false, ex: { inv: parsed.inv || null, pl: parsed.pl || null, bl: parsed.bl || null }, classification, certificates: parsed.certificates || [], notes: [...notes, ...(parsed.notes || [])] });
+  json(res, 200, { simulated: false, provider: out.provider, model: out.model, local: out.local, ex: { inv: parsed.inv || null, pl: parsed.pl || null, bl: parsed.bl || null }, classification, certificates: parsed.certificates || [], notes: [...notes, ...(parsed.notes || [])] });
 }
 
 const SYSTEM = `You are a customs documentation analyst for small importers. You read commercial invoices, packing lists, bills of lading / air waybills, certificates and label artwork, and return precise structured data. Never invent values: if a field is not present in a document, return an empty string. Keep units as written (e.g. "594 kg"). Quantities are total units across all line items. Respond with JSON only.`;
@@ -201,8 +193,8 @@ Return exactly this JSON shape and nothing else:
 function toContentBlock(f) {
   const type = (f.type || '').toLowerCase();
   const name = (f.name || '').toLowerCase();
-  if (type === 'application/pdf' || name.endsWith('.pdf')) return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.data } };
-  if (/^image\/(png|jpeg|jpg|webp|gif)$/.test(type)) return { type: 'image', source: { type: 'base64', media_type: type === 'image/jpg' ? 'image/jpeg' : type, data: f.data } };
+  if (type === 'application/pdf' || name.endsWith('.pdf')) return { type: 'pdf', data: f.data, name: f.name };
+  if (/^image\/(png|jpeg|jpg|webp|gif)$/.test(type)) return { type: 'image', media_type: type === 'image/jpg' ? 'image/jpeg' : type, data: f.data };
   if (type.startsWith('text/') || /\.(csv|txt|tsv|md|json)$/.test(name)) {
     const text = Buffer.from(f.data, 'base64').toString('utf8').slice(0, 60000);
     return { type: 'text', text };
@@ -256,20 +248,15 @@ Return exactly this JSON shape:
 async function assess(req, res) {
   const b = (await readJson(req)) || {};
   if (!b.desc || !b.dest) return json(res, 400, { error: 'desc and dest required' });
-  if (!API_KEY) return json(res, 200, { simulated: true, note: 'ANTHROPIC_API_KEY not set — assessments need the live model.' });
-  const body = { model: MODEL, max_tokens: 6000, temperature: 0, system: ASSESS_SYSTEM, messages: [{ role: 'user', content: assessPrompt(b) }], tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }] };
-  let r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body) });
-  if (!r.ok && r.status === 400) { // web search tool not available on this account/model: retry without it
-    delete body.tools; r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body) });
-  }
-  if (!r.ok) { const t = await r.text(); console.error('assess error', r.status, t.slice(0, 400)); return json(res, 502, { error: `Model request failed (${r.status})` }); }
-  const data = await r.json();
-  const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
-  const sources = []; (data.content || []).forEach(c => { if (c.type === 'web_search_tool_result' && Array.isArray(c.content)) c.content.forEach(x => { if (x.url) sources.push({ title: x.title || x.url, url: x.url }); }); if (c.citations) c.citations.forEach(ci => { if (ci.url) sources.push({ title: ci.title || ci.url, url: ci.url }); }); });
-  const parsed = extractJson(text);
-  if (!parsed) return json(res, 502, { error: 'Could not parse the assessment', raw: text.slice(0, 2000) });
-  const seen = new Set(); const uniq = sources.filter(x => !seen.has(x.url) && seen.add(x.url)).slice(0, 25);
-  json(res, 200, { simulated: false, assessment: parsed, sources: uniq, model: MODEL, at: new Date().toISOString(), searched: !!body.tools });
+  if (!llm.enabled()) return json(res, 200, { simulated: true, note: 'No model configured — set LLM_PROVIDER in .env (ollama for local, or anthropic).' });
+  const cfg = llm.config();
+  const system = cfg.web ? ASSESS_SYSTEM : ASSESS_SYSTEM.replace('Use web search to confirm current rules and rates when they may have changed.', 'You cannot browse; rely on your knowledge, give official URLs you are confident exist, and lower confidence for anything that may have changed recently.');
+  let out; try { out = await llm.complete({ system, user: assessPrompt(b), maxTokens: 6000, json: true, webSearch: true }); }
+  catch (e) { console.error('assess error', e.message); return json(res, 502, { error: e.message }); }
+  const parsed = extractJson(out.text);
+  if (!parsed) return json(res, 502, { error: 'Could not parse the assessment', raw: out.text.slice(0, 2000) });
+  const seen = new Set(); const uniq = (out.sources || []).filter(x => !seen.has(x.url) && seen.add(x.url)).slice(0, 25);
+  json(res, 200, { simulated: false, assessment: parsed, sources: uniq, model: out.model, provider: out.provider, local: out.local, at: new Date().toISOString(), searched: !!out.searched });
 }
 
 /* ------------------------------------------------------------------
@@ -277,7 +264,7 @@ async function assess(req, res) {
    ------------------------------------------------------------------ */
 async function chatIntent(req, res) {
   const b = (await readJson(req)) || {};
-  if (!API_KEY) return json(res, 200, { simulated: true });
+  if (!llm.enabled()) return json(res, 200, { simulated: true });
   const ctx = JSON.stringify(b.context || {}).slice(0, 14000);
   const prompt = `You are the assistant inside ClearWay, a shipment-compliance app for importers and their factories, forwarders and brokers. The user is a ${b.role || 'Importer'}.
 Workspace snapshot (JSON, may be truncated): ${ctx}
@@ -285,7 +272,7 @@ Workspace snapshot (JSON, may be truncated): ${ctx}
 User message: """${String(b.text || '').slice(0, 1200)}"""
 
 Decide what the app should do. Intents:
-- check: user describes a product to import/export (extract desc, origin ISO2, dest US|CA|EU|UK|CN, mode Ocean|Air|Express, units, value)
+- check: user describes a product to import/export (extract desc = the product only, without quantities; origin = ISO2 country of manufacture/departure; dest = destination market US|CA|EU|UK|CN — map cities to their country: Montreal→CA, Hamburg→EU, London→UK; mode Ocean|Air|Express; units; value in USD)
 - status: what is blocked / at risk / changed
 - followups: draft messages to suppliers/partners
 - deadlines: what is due when
@@ -296,9 +283,7 @@ Decide what the app should do. Intents:
 - answer: any other question answerable from the snapshot — write the answer in 2–5 sentences, cite record ids/names, no invention
 Return JSON only: {"intent":"...","desc":"","origin":"","dest":"","mode":"","units":null,"value":null,"productName":null,"shipmentId":null,"action":null,"email":null,"role":null,"blockerTitle":null,"answer":null,"related":[{"type":"shipment|product","id":""}]}`;
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-5-5', max_tokens: 700, temperature: 0, messages: [{ role: 'user', content: prompt }] }) });
-    if (!r.ok) return json(res, 200, { simulated: true });
-    const data = await r.json(); const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+    const out = await llm.complete({ user: prompt, maxTokens: 700, json: true, fast: true }); const text = out.text;
     const j = extractJson(text); if (!j) return json(res, 200, { simulated: true });
     const clean = {}; Object.entries(j).forEach(([k, v]) => { if (v !== null && v !== '' && v !== undefined) clean[k] = v; });
     if (!clean.intent) clean.intent = 'help';
@@ -399,7 +384,7 @@ function integrationStatus() {
       freightos: !!process.env.FREIGHTOS_API_KEY, maersk: !!(process.env.MAERSK_CLIENT_ID && process.env.MAERSK_CLIENT_SECRET), flexport: !!process.env.FLEXPORT_API_KEY, shippo: !!process.env.SHIPPO_API_KEY,
       builtin: true,
     },
-    extraction: !!API_KEY,
+    extraction: llm.enabled(),
   };
 }
 const ORIGIN_FACTOR = { CN: 1, HK: 1, VN: 1.05, TH: 1.05, ID: 1.08, MY: 1.03, KH: 1.1, IN: 1.1, BD: 1.15, PK: 1.15, LK: 1.1, KR: 0.95, TW: 0.95, JP: 1.0, TR: 0.7, AE: 0.8, EG: 0.75, DE: 0.35, NL: 0.35, BE: 0.35, FR: 0.4, ES: 0.45, IT: 0.45, GR: 0.5, PL: 0.4, GB: 0.4, US: 0.5, CA: 0.5, MX: 0.45, BR: 0.9, AU: 1.0, ZA: 1.0, NG: 1.1 };
