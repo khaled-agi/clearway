@@ -142,7 +142,8 @@ function pageChat(){
     <section class="chat-main">
       <div class="chat-scroll" id="chatScroll">
       ${c.messages.length?c.messages.map(renderMsg).join(''):`<div class="chat-welcome"><h1>Welcome, ${esc(first)}.</h1><p>${myRole()==='Importer'?'Describe what you\'re importing or exporting. ClearWay works out the rules, the cost, the documents — and where each form gets filed.':myRole()==='Factory'?'Ask what documents and labels the importer needs from you, upload them here, and see what still needs fixing.':myRole()==='Forwarder'?'Ask which bookings are missing filing data, what the cut-offs are, and where documents disagree with the BL.':'Ask which assessments and classifications need your review, and open the document packs ready for entry.'}</p>
-        <div class="cs-h" style="margin-top:28px">How about we start with…</div>${sugg.map(([q])=>`<button class="sugg" onclick="sendChat(${JSON.stringify(q).replace(/"/g,'&quot;')})">${esc(q)}</button>`).join('')}
+        ${myRole()==='Importer'?`<a class="plan-cta" href="#plan"><b>Plan a shipment step by step</b><span>Product → shipping → requirements → documents → submit</span><em>→</em></a>`:''}
+        <div class="cs-h" style="margin-top:28px">Or ask anything…</div>${sugg.map(([q])=>`<button class="sugg" onclick="sendChat(${JSON.stringify(q).replace(/"/g,'&quot;')})">${esc(q)}</button>`).join('')}
         <div class="hint" style="margin-top:14px">Tip: mention a product or shipment by name (or type @ to pick one) to ask about it.</div></div>`}
       </div>
       <form class="composer" id="composer" onsubmit="event.preventDefault();sendChat(document.getElementById('chatIn').value)">
@@ -206,12 +207,11 @@ async function answer(p,text){
       <p><b>${reqs.length} requirements</b> for ${dest} — ${certs.length} certificates/test reports the factory must supply, ${labels.length} label elements, ${filings.length} filings/registrations on your side. ${pill(cov.level==='good'?'good':cov.level==='partial'?'warn':'crit','rule coverage: '+cov.level)}</p>
       <ul class="chat-list">${reqs.slice(0,7).map(r=>`<li><b>${esc(r.name)}</b> <span class="muted">· ${esc(r.owner||'')}${r.legal?' · '+esc(r.legal):''}</span></li>`).join('')}${reqs.length>7?`<li class="muted">…and ${reqs.length-7} more on the product page</li>`:''}</ul>
       ${certs.length?`<p class="muted" style="font-size:12.5px">If the top certificates are missing at the border: roughly <b>${money(worst.low)}–${money(worst.high)}</b> in exam, storage and broker time${worst.atRisk?`, with ${money(worst.atRisk)} of goods at risk of refusal`:''}.</p>`:''}
-      <p>Next, I can ${prod?'':'save this as a product, '}run a sourced assessment (legal basis + sources, for your broker to review), start the shipment and check the factory's documents, or show you exactly which forms get filed where.</p>`;
-    window.__pending={desc,dest,origin,mode,units:p.units||'',value:p.value||'',productId:prod?prod.id:null};
-    const actions=[];
-    if(!prod)actions.push({label:'Save as product',primary:true,onclick:"chatSaveProduct()"});
+      <p><b>Next:</b> the planner walks you through it in five steps — a few questions about the product, shipping and dates, these requirements as a checklist, the documents pre-filled, and where each one gets filed.</p>`;
+    window.__pending={desc,dest,origin,mode:p.mode||'',units:p.units||'',value:p.value||'',weightKg:p.weightKg||'',originCity:p.originCity||'',destCity:p.destCity||'',destCountry:p.destCountry||'',productId:prod?prod.id:null};
+    const actions=[{label:'Plan this shipment step by step →',primary:true,onclick:'startPlanFromChat()'}];
+    if(!prod)actions.push({label:'Save as product',onclick:"chatSaveProduct()"});
     actions.push({label:'Run sourced assessment',onclick:prod?`location.hash='product-${prod.id}'`:"chatSaveProduct(true)"});
-    actions.push({label:'Start shipment & upload documents',onclick:"chatStartShipment()"});
     actions.push({label:'Where do I file?',onclick:`sendChat('Where do I file for ${dest}?')`});
     actions.push({label:'Freight & fees',onclick:`window.__rt={origin:'${origin}',dest:'${dest}',mode:'${mode}',cbm:${Math.max(1,Math.round(units/60))},kg:${Math.round(units*0.5)},value:${value}};location.hash='rates'`});
     return {html,actions};

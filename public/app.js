@@ -2,7 +2,7 @@
 'use strict';
 const $=s=>document.querySelector(s); const $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const fmtD=d=>new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+const fmtD=d=>(typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)?new Date(d+'T12:00:00'):new Date(d)).toLocaleDateString('en-US',{month:'short',day:'numeric'});
 const daysUntil=d=>Math.round((new Date(d)-Date.now())/864e5);
 const addDays=n=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString();};
 const uid=p=>p+'-'+Math.random().toString(36).slice(2,7).toUpperCase();
@@ -133,13 +133,13 @@ const myRole=()=>(ME&&ME.role)||S.settings.role||'Importer';
 const myCompany=()=>(ME&&ME.company)||'';
 /* what each role sees */
 const NAV_BY_ROLE={
-  Importer:{main:['chat','overview','shipments','products','partners','settings'],more:['documents','rules','kb','rates','how']},
+  Importer:{main:['chat','plan','overview','shipments','products','partners','settings'],more:['documents','rules','kb','rates','how']},
   Factory:{main:['chat','overview','shipments','documents','products','settings'],more:['rules','how']},
   Forwarder:{main:['chat','overview','shipments','documents','rates','settings'],more:['partners','rules','how']},
   Broker:{main:['chat','overview','shipments','products','documents','settings'],more:['rules','kb','rates','partners','how']},
 };
-const NAV_LABELS={chat:'Ask ClearWay',overview:'Work queue',shipments:'Shipments',products:'Products',partners:'Partners',documents:'Documents',rules:'Compliance rules',kb:'Knowledge base',rates:'Rates & fees',how:'How it works',settings:'Settings'};
-const NAV_ICONS={chat:'chat',overview:'home',shipments:'box',products:'grid',partners:'people',documents:'doc',rules:'shield',kb:'book',rates:'rates',how:'help',settings:'gear'};
+const NAV_LABELS={plan:'Plan a shipment',chat:'Ask ClearWay',overview:'Work queue',shipments:'Shipments',products:'Products',partners:'Partners',documents:'Documents',rules:'Compliance rules',kb:'Knowledge base',rates:'Rates & fees',how:'How it works',settings:'Settings'};
+const NAV_ICONS={plan:'route',chat:'chat',overview:'home',shipments:'box',products:'grid',partners:'people',documents:'doc',rules:'shield',kb:'book',rates:'rates',how:'help',settings:'gear'};
 /* records visible to this user: a factory sees only what it supplies; others see the workspace */
 const normCo=t=>String(t||'').toLowerCase().replace(/\b(co|ltd|limited|inc|llc|gmbh|company|corp|corporation|factory|trading|industrial|manufacturing)\b|[.,()]/g,' ').replace(/\s+/g,' ').trim();
 function sameCompany(a,b){a=normCo(a);b=normCo(b);if(!a||!b)return false;if(a===b||a.includes(b)||b.includes(a))return true;const wa=a.split(' '),wb=b.split(' ');return wa.filter(w=>w.length>2&&wb.includes(w)).length>=2;}
@@ -151,11 +151,11 @@ function modelStatusHtml(){const h=window.__health;if(!h)return '<span class="mu
   return `${pill('good','Ready')} <b>${name}</b> · ${esc(h.model||'')} ${h.local?pill('neutral','local — data stays on this machine'):''} ${h.web?pill('neutral','web search'):''} ${h.vision?pill('neutral','reads images'):''}`;}
 function fixFor(b){let t=b.fix||'';const r=myRole();if(r==='Factory'){t=t.replace(/^(Ask|Request from|Obtain from) the factory (for|to)\s*/i,'Send ').replace(/^Confirm the count with the factory and have/i,'Re-count and').replace(/^Send the tracking-label spec to the factory before/i,'Add the tracking label before').replace(/\bfrom the factory\b/gi,'').replace(/\bthe factory\b/gi,'you');}if(r==='Forwarder'){t=t.replace(/\bwith the forwarder\b/gi,'');}return t.charAt(0).toUpperCase()+t.slice(1);}
 function mine(list){if(myRole()!=='Factory')return list;const co=myCompany();if(!co)return list;return list.filter(x=>sameCompany(x.productId?product(x).supplier:x.supplier,co));}
-function icon(n){const p={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',doc:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',people:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 2 5 5"/>',chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/>',book:'<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/>',rates:'<path d="M12 2v20M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 3 5 3 5 1.1 5 3-2.2 3-5 3-5-1.1-5-3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/>'}[n];
+function icon(n){const p={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',doc:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',people:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 2 5 5"/>',route:'<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H17a3.5 3.5 0 0 0 0-7H7a3.5 3.5 0 0 1 0-7h8.5"/>',chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/>',book:'<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/>',rates:'<path d="M12 2v20M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 3 5 3 5 1.1 5 3-2.2 3-5 3-5-1.1-5-3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/>'}[n];
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;}
 
 function renderNav(active){
-  const link=([id,label,ic])=>`<a href="#${id}" class="${active===id||(active.startsWith('shipment-')&&id==='shipments')||(active.startsWith('product-')&&id==='products')||(active.startsWith('docs-')&&id==='shipments')||(active.startsWith('rates-')&&id==='rates')?'active':''}">${ic}<span>${label}</span></a>`;
+  const link=([id,label,ic])=>`<a href="#${id}" class="${active===id||(active.startsWith('shipment-')&&id==='shipments')||(active.startsWith('product-')&&id==='products')||(active.startsWith('docs-')&&id==='shipments')||(active.startsWith('rates-')&&id==='rates')||(active.startsWith('plan-')&&id==='plan')?'active':''}">${ic}<span>${label}</span></a>`;
   const cfg=NAV_BY_ROLE[myRole()]||NAV_BY_ROLE.Importer;const mk=id=>[id,NAV_LABELS[id],icon(NAV_ICONS[id])];
   $('#nav').innerHTML=cfg.main.map(mk).map(link).join('')+(cfg.more.length?`<div class="nav-more">More</div>`+cfg.more.map(mk).map(link).join(''):'');
   $('#account').innerHTML=ME?`<div class="acct"><div class="av" style="background:${hue(ME.email)}">${initials(ME.email)}</div><div class="acct-b"><b>${esc(myCompany()||S.settings.company||(WS&&WS.name)||'My workspace')}</b><span>${esc(ME.email)}</span></div><button class="btn sm ghost" data-act="logout" title="Sign out">↪</button></div>`:(MODE==='local'?`<div class="acct"><div class="acct-b"><b>Local mode</b><span>Data stays in this browser</span></div></div>`:'');
@@ -166,6 +166,8 @@ function route(){
   renderNav(h); window.scrollTo(0,0);
   const v=$('#view'); v.classList.toggle('is-chat',h==='chat');
   if(h==='chat')v.innerHTML=pageChat();
+  else if(h==='plan')v.innerHTML=pagePlanHome();
+  else if(h.startsWith('plan-'))v.innerHTML=pagePlan(h.slice(5));
   else if(h==='overview')v.innerHTML=pageOverview();
   else if(h==='shipments')v.innerHTML=pageShipments();
   else if(h.startsWith('shipment-'))v.innerHTML=pageShipment(h.slice(9));
