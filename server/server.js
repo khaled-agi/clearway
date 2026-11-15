@@ -63,7 +63,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`ClearWay running at http://localhost:${PORT}`);
-  llm.health().then(h => console.log(h.provider === 'none' ? 'Model: none — rules + simulation. Set LLM_PROVIDER (ollama | openai | anthropic) in .env.' : `Model: ${h.provider} · ${h.model}${h.local ? ' (local, nothing leaves this machine)' : ''} · ${h.live ? 'ready' : 'NOT READY — ' + (h.error || (h.missing && h.missing.length ? 'run: ollama pull ' + h.missing.join(' && ollama pull ') : 'check configuration'))}`));
+  llm.health().then(h => console.log(h.provider === 'none' ? 'Model: none — rules + simulation. Set LLM_PROVIDER (groq | ollama | openai | anthropic) in .env.' : `Model: ${h.provider} · ${h.model}${h.local ? ' (local, nothing leaves this machine)' : ''} · ${h.live ? 'ready' : 'NOT READY — ' + (h.error || (h.missing && h.missing.length ? (h.provider === 'ollama' ? 'run: ollama pull ' + h.missing.join(' && ollama pull ') : h.error) : 'check configuration'))}`));
 });
 
 /* ------------------------------------------------------------------

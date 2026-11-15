@@ -95,10 +95,18 @@ ClearWay works with three kinds of model, chosen in `.env` — the rest of the a
 
 | `LLM_PROVIDER` | What it is | Reads PDFs | Reads images/scans | Web-searched assessments | Data leaves your machine |
 |---|---|---|---|---|---|
+| `groq` | [Groq](https://console.groq.com) cloud — very fast, free tier, nothing to install. Defaults: `openai/gpt-oss-120b`, fast `openai/gpt-oss-20b` | text PDFs | if a vision model is offered (`GROQ_VISION_MODEL`) | no | yes (to Groq) |
 | `ollama` | Local model via [Ollama](https://ollama.com) | text PDFs (built-in extractor) | with `OLLAMA_VISION_MODEL` | no — "model knowledge only" | **no** |
 | `openai` | Any OpenAI-compatible local server: LM Studio, llama.cpp, vLLM, LocalAI | text PDFs | with `OPENAI_VISION_MODEL` | no | no (if local) |
 | `anthropic` | Claude | yes, natively | yes | **yes**, with sources | yes (to Anthropic) |
 | *(empty)* | No model | — | — | — | — |
+
+**Quickest: Groq (no install).** Create a key at console.groq.com/keys, then in `.env`:
+```
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+```
+Groq's model list changes often; if a model is retired, the terminal and Settings → AI model list the ones currently offered — set `GROQ_MODEL` to one of them.
 
 **Set up Ollama (Mac):**
 ```bash
