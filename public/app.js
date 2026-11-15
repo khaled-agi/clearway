@@ -129,16 +129,32 @@ function docIssues(s){return openB(s).filter(b=>DOC_KINDS.has(b.kind));}
    Routing + shell
    ===================================================================== */
 const ROLES=[['Importer','You own the product record and the entry; you decide what ships.'],['Factory','You produce the goods, the documents and the labels.'],['Forwarder','You book the cargo, file ISF/ENS data, issue the BL.'],['Broker','You classify, file the entry and talk to customs.']];
-const NAV=[['chat','Ask ClearWay',icon('chat')],['overview','Work queue',icon('home')],['shipments','Shipments',icon('box')],['products','Products',icon('grid')],['settings','Settings',icon('gear')]];
-const NAV_MORE=[['partners','Partners',icon('people')],['documents','Documents',icon('doc')],['rules','Compliance rules',icon('shield')],['kb','Knowledge base',icon('book')],['rates','Rates & fees',icon('rates')],['how','How it works',icon('help')]];
+const myRole=()=>(ME&&ME.role)||S.settings.role||'Importer';
+const myCompany=()=>(ME&&ME.company)||'';
+/* what each role sees */
+const NAV_BY_ROLE={
+  Importer:{main:['chat','overview','shipments','products','partners','settings'],more:['documents','rules','kb','rates','how']},
+  Factory:{main:['chat','overview','shipments','documents','products','settings'],more:['rules','how']},
+  Forwarder:{main:['chat','overview','shipments','documents','rates','settings'],more:['partners','rules','how']},
+  Broker:{main:['chat','overview','shipments','products','documents','settings'],more:['rules','kb','rates','partners','how']},
+};
+const NAV_LABELS={chat:'Ask ClearWay',overview:'Work queue',shipments:'Shipments',products:'Products',partners:'Partners',documents:'Documents',rules:'Compliance rules',kb:'Knowledge base',rates:'Rates & fees',how:'How it works',settings:'Settings'};
+const NAV_ICONS={chat:'chat',overview:'home',shipments:'box',products:'grid',partners:'people',documents:'doc',rules:'shield',kb:'book',rates:'rates',how:'help',settings:'gear'};
+/* records visible to this user: a factory sees only what it supplies; others see the workspace */
+const normCo=t=>String(t||'').toLowerCase().replace(/\b(co|ltd|limited|inc|llc|gmbh|company|corp|corporation|factory|trading|industrial|manufacturing)\b|[.,()]/g,' ').replace(/\s+/g,' ').trim();
+function sameCompany(a,b){a=normCo(a);b=normCo(b);if(!a||!b)return false;if(a===b||a.includes(b)||b.includes(a))return true;const wa=a.split(' '),wb=b.split(' ');return wa.filter(w=>w.length>2&&wb.includes(w)).length>=2;}
+/* fix text written for whoever is reading it */
+function fixFor(b){let t=b.fix||'';const r=myRole();if(r==='Factory'){t=t.replace(/^(Ask|Request from|Obtain from) the factory (for|to)\s*/i,'Send ').replace(/^Confirm the count with the factory and have/i,'Re-count and').replace(/^Send the tracking-label spec to the factory before/i,'Add the tracking label before').replace(/\bfrom the factory\b/gi,'').replace(/\bthe factory\b/gi,'you');}if(r==='Forwarder'){t=t.replace(/\bwith the forwarder\b/gi,'');}return t.charAt(0).toUpperCase()+t.slice(1);}
+function mine(list){if(myRole()!=='Factory')return list;const co=myCompany();if(!co)return list;return list.filter(x=>sameCompany(x.productId?product(x).supplier:x.supplier,co));}
 function icon(n){const p={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',doc:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',people:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 2 5 5"/>',chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/>',book:'<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/>',rates:'<path d="M12 2v20M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 3 5 3 5 1.1 5 3-2.2 3-5 3-5-1.1-5-3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/>'}[n];
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;}
 
 function renderNav(active){
   const link=([id,label,ic])=>`<a href="#${id}" class="${active===id||(active.startsWith('shipment-')&&id==='shipments')||(active.startsWith('product-')&&id==='products')||(active.startsWith('docs-')&&id==='shipments')||(active.startsWith('rates-')&&id==='rates')?'active':''}">${ic}<span>${label}</span></a>`;
-  $('#nav').innerHTML=NAV.map(link).join('')+`<div class="nav-more">More</div>`+NAV_MORE.map(link).join('');
-  $('#account').innerHTML=ME?`<div class="acct"><div class="av" style="background:${hue(ME.email)}">${initials(ME.email)}</div><div class="acct-b"><b>${esc(S.settings.company||(WS&&WS.name)||'My workspace')}</b><span>${esc(ME.email)}</span></div><button class="btn sm ghost" data-act="logout" title="Sign out">↪</button></div>`:(MODE==='local'?`<div class="acct"><div class="acct-b"><b>Local mode</b><span>Data stays in this browser</span></div></div>`:'');
-  const role=S.settings.role||'Importer';$('#role').innerHTML=`<div class="role-l">I am the…</div><div class="seg vert">${ROLES.map(r=>`<button class="${role===r[0]?'active':''}" onclick="S.settings.role='${r[0]}';save();route()">${r[0]}</button>`).join('')}</div><div class="muted" style="font-size:11px;margin-top:6px">${esc(ROLES.find(r=>r[0]===role)[1])}</div>`;
+  const cfg=NAV_BY_ROLE[myRole()]||NAV_BY_ROLE.Importer;const mk=id=>[id,NAV_LABELS[id],icon(NAV_ICONS[id])];
+  $('#nav').innerHTML=cfg.main.map(mk).map(link).join('')+(cfg.more.length?`<div class="nav-more">More</div>`+cfg.more.map(mk).map(link).join(''):'');
+  $('#account').innerHTML=ME?`<div class="acct"><div class="av" style="background:${hue(ME.email)}">${initials(ME.email)}</div><div class="acct-b"><b>${esc(myCompany()||S.settings.company||(WS&&WS.name)||'My workspace')}</b><span>${esc(ME.email)}</span></div><button class="btn sm ghost" data-act="logout" title="Sign out">↪</button></div>`:(MODE==='local'?`<div class="acct"><div class="acct-b"><b>Local mode</b><span>Data stays in this browser</span></div></div>`:'');
+  const role=myRole();$('#role').innerHTML=`<div class="role-l">Signed in as</div><div style="font-weight:600;font-size:13px">${esc(role)}${myCompany()?` · <span class="muted" style="font-weight:400">${esc(myCompany())}</span>`:''}</div><div class="muted" style="font-size:11px;margin-top:4px">${esc((ROLES.find(r=>r[0]===role)||ROLES[0])[1])}</div>`;
 }
 function route(){
   const h=(location.hash||'#chat').slice(1);
@@ -211,14 +227,14 @@ function pageWelcome(){
 }
 function pageOverview(){
   if(!S.shipments.length&&!S.products.length)return pageWelcome();
-  const active=S.shipments.filter(s=>stageOf(s)<7);
+  const active=mine(S.shipments).filter(s=>stageOf(s)<7);
   const blocked=active.filter(s=>status(s)==='crit'), warn=active.filter(s=>status(s)==='warn'), ready=active.filter(s=>status(s)==='good');
   const ex=active.map(exposure); const low=ex.reduce((a,e)=>a+e.low,0), high=ex.reduce((a,e)=>a+e.high,0), atRisk=ex.reduce((a,e)=>a+e.atRisk,0);
   const hour=new Date().getHours(); const greet=hour<12?'Good morning':hour<18?'Good afternoon':'Good evening';
   const items=[]; active.forEach(s=>openB(s).forEach(b=>items.push({s,b,i:impact(b.kind,{units:s.units,value:s.value}),dl:nextDeadline(s)})));
-  const role=S.settings.role||'Importer'; const mine=items.filter(x=>x.b.owner.toLowerCase().startsWith(role.toLowerCase())); const showMine=role!=='Importer'&&mine.length;
+  const role=myRole(); const mineItems=items.filter(x=>x.b.owner.toLowerCase().startsWith(role.toLowerCase())); const showMine=role!=='Importer'&&mineItems.length;
   items.sort((a,b)=>(a.b.sev==='crit'?0:1)-(b.b.sev==='crit'?0:1)||daysUntil(a.dl.date)-daysUntil(b.dl.date)||b.i.high-a.i.high);
-  mine.sort((a,b)=>(a.b.sev==='crit'?0:1)-(b.b.sev==='crit'?0:1)||daysUntil(a.dl.date)-daysUntil(b.dl.date));
+  mineItems.sort((a,b)=>(a.b.sev==='crit'?0:1)-(b.b.sev==='crit'?0:1)||daysUntil(a.dl.date)-daysUntil(b.dl.date));
   const lead=blocked.length?`<b>${blocked.length} shipment${blocked.length>1?'s':''} can't book</b> until something is fixed. Shipping everything as-is could cost <b>${money(low)}–${money(high)}</b> in exams, storage and penalties${atRisk?`, with <b>${money(atRisk)}</b> of goods at risk of refusal`:''}.`:
     `Nothing is blocked. ${warn.length?`${warn.length} shipment${warn.length>1?'s':''} ha${warn.length>1?'ve':'s'} items worth fixing before the deadline.`:'All active shipments are ready to book.'}`;
   return `
@@ -241,10 +257,11 @@ function pageOverview(){
     <div class="board">${STAGES.map((st,i)=>{const list=S.shipments.filter(s=>stageOf(s)===i);return `<div class="col"><div class="col-h"><span class="n">${i+1}</span>${st.name}<span class="cnt">${list.length}</span></div><div class="col-who">${st.who}</div>${list.map(s=>`<a href="#shipment-${s.id}" class="chip ${status(s)}"><b>${esc(product(s).name)}</b><span>${s.id} · ${s.dest} ${s.mode}</span></a>`).join('')}</div>`;}).join('')}</div>
   </section>
 
+  ${myRole()==='Broker'?`<section class="card"><div class="card-h"><h2>Review queue</h2><span class="hint">assessments and classifications waiting on a broker</span></div>${(()=>{const q=[];S.products.forEach(p=>Object.entries(p.assess||{}).forEach(([m,a])=>{if(!a.reviewed)q.push({p,m,a});}));return q.length?q.map(({p,m,a})=>`<div class="li" data-go="product-${p.id}"><span class="ico warn">!</span><div class="li-b"><div class="li-t">${esc(p.name)} · ${m}</div><div class="li-s">Assessment ${fmtD(a.at)} · ${(a.result&&a.result.requirements||[]).length} requirements · classification ${esc(a.result&&a.result.classification&&a.result.classification.code||'—')}</div></div><button class="btn sm primary" data-act="review" data-p="${p.id}" data-m="${m}">Review</button></div>`).join(''):empty('Nothing waiting for review');})()}</section>`:''}
   <div class="two">
     <section class="card">
-      <div class="card-h"><h2>${showMine?`Your tasks as ${role}`:'Needs your attention'}</h2><span class="hint">${showMine?`${mine.length} of ${items.length} open items are yours`:items.length+' open items, most urgent first'}</span></div>
-      ${(showMine?mine:items).length?`<div class="list">${(showMine?mine:items).slice(0,8).map(({s,b,i,dl})=>`<div class="li" data-go="shipment-${s.id}">${sevIcon(b.sev)}<div class="li-b"><div class="li-t">${esc(b.title)} <span class="muted">· ${esc(product(s).name)}</span></div><div class="li-s">${esc(b.owner)} to fix · ${dl.label} ${fmtD(dl.date)} (${daysUntil(dl.date)}d)</div></div><div class="li-r"><div class="num">${impactRange(i)}</div><div class="muted">if not fixed</div></div></div>`).join('')}</div>${items.length>8?`<a class="more" href="#shipments">See all ${items.length} →</a>`:''}`:empty('Nothing needs attention','New shipments will show their blockers here.')}
+      <div class="card-h"><h2>${showMine?`Your tasks as ${role}`:'Needs your attention'}</h2><span class="hint">${showMine?`${mineItems.length} of ${items.length} open items are yours`:items.length+' open items, most urgent first'}</span></div>
+      ${(showMine?mineItems:items).length?`<div class="list">${(showMine?mineItems:items).slice(0,8).map(({s,b,i,dl})=>`<div class="li" data-go="shipment-${s.id}">${sevIcon(b.sev)}<div class="li-b"><div class="li-t">${esc(b.title)} <span class="muted">· ${esc(product(s).name)}</span></div><div class="li-s">${esc(b.owner)} to fix · ${dl.label} ${fmtD(dl.date)} (${daysUntil(dl.date)}d)</div></div><div class="li-r"><div class="num">${impactRange(i)}</div><div class="muted">if not fixed</div></div></div>`).join('')}</div>${items.length>8?`<a class="more" href="#shipments">See all ${items.length} →</a>`:''}`:empty('Nothing needs attention','New shipments will show their blockers here.')}
     </section>
     <section class="card">
       <div class="card-h"><h2>Next deadlines</h2></div>
@@ -257,7 +274,7 @@ function pageOverview(){
 
 function pageShipments(){
   const f=window.__f||(window.__f={q:'',dest:'',st:'',stage:''});
-  let list=S.shipments.slice();
+  let list=mine(S.shipments).slice();
   if(f.q)list=list.filter(s=>(s.id+product(s).name+product(s).supplier).toLowerCase().includes(f.q.toLowerCase()));
   if(f.dest)list=list.filter(s=>s.dest===f.dest); if(f.st)list=list.filter(s=>status(s)===f.st); if(f.stage!=='')list=list.filter(s=>String(stageOf(s))===f.stage);
   list.sort((a,b)=>(status(a)==='crit'?0:status(a)==='warn'?1:2)-(status(b)==='crit'?0:status(b)==='warn'?1:2)||daysUntil(nextDeadline(a).date)-daysUntil(nextDeadline(b).date));
@@ -388,7 +405,7 @@ function blockerCard(s,b,ctx){
     <b>${esc(b.title)}</b><p>${esc(b.detail)}</p>
     <div class="why"><span class="k">Why it matters</span>${esc(i.why)}</div>
     <div class="imp"><span class="k">If not fixed</span><b>${impactRange(i)}</b> · ~${i.days} days${i.atRisk?` · <span class="crit-ink">${money(i.atRisk)} goods at risk</span>`:''}<details><summary>breakdown</summary><table class="mini"><tbody>${i.items.map(x=>`<tr><td>${esc(x[0])}</td><td class="num">${money(x[1])}</td></tr>`).join('')}</tbody></table><div class="muted">Assumptions in Settings → Cost model.</div></details></div>
-    <div class="fix">→ ${esc(b.fix)} <span class="muted">(${esc(b.owner)})</span></div>
+    <div class="fix">→ ${esc(fixFor(b))} <span class="muted">(${esc(b.owner)})</span></div>
     <div class="blk-a"><button class="btn sm primary" data-act="fixed" data-id="${s.id}" data-b="${b.id}">Mark fixed</button><button class="btn sm" data-act="ask" data-id="${s.id}" data-b="${b.id}">Ask ${esc(b.owner.toLowerCase())}</button></div>
   </div></div>`;
 }
@@ -433,7 +450,7 @@ function pageProduct(id){
 
 function pageDocuments(){
   const f=window.__fd||(window.__fd={st:''});
-  const rows=[]; S.shipments.forEach(s=>DOCS.forEach(([k,n])=>{const st=s.docs[k]||'missing';const issues=docIssues(s);rows.push({s,k,n,st,issues});}));
+  const rows=[]; mine(S.shipments).forEach(s=>DOCS.forEach(([k,n])=>{const st=s.docs[k]||'missing';const issues=docIssues(s);rows.push({s,k,n,st,issues});}));
   const list=f.st?rows.filter(r=>r.st===f.st):rows;
   const c={ok:rows.filter(r=>r.st==='ok').length,mismatch:rows.filter(r=>r.st==='mismatch').length,missing:rows.filter(r=>r.st==='missing').length};
   return `${pageHead('Documents','Every document we have seen, and whether it agrees with the others on the same shipment.',`<button class="btn primary" data-act="new">Upload documents</button>`)}
@@ -476,11 +493,14 @@ function pageSettings(){
   const c={...COSTS,...(S.costs||{})};
   return `${pageHead('Settings','')}
   <div class="two"><div>
-    <section class="card"><div class="card-h"><h2>Your company</h2></div>
+    <section class="card"><div class="card-h"><h2>Your account</h2></div>
+      <div class="kv"><span>Role</span><b>${esc(myRole())}</b></div>${ME?`<div class="kv"><span>Email</span><b>${esc(ME.email)}</b></div>`:''}${myCompany()?`<div class="kv"><span>Company</span><b>${esc(myCompany())}</b></div>`:''}
+      <p class="muted p" style="padding:0 18px 16px">Your role is set when you sign up (or by the invite you accepted) and decides what you see. ${myRole()==='Factory'?'You see only the shipments and products you supply.':''}</p></section>
+    ${myRole()==='Importer'?`<section class="card"><div class="card-h"><h2>Importer of record</h2></div>
       <div class="form"><label>Importer of record (legal name)<input class="in" value="${esc(S.settings.company)}" onchange="S.settings.company=this.value;save()"></label>
       <label>EIN / IRS number (US)<input class="in" value="${esc(S.settings.ein)}" onchange="S.settings.ein=this.value;save()"></label>
       <label>EORI (EU/UK)<input class="in" value="${esc(S.settings.eori)}" onchange="S.settings.eori=this.value;save()"></label>
-      <label>Default market<select class="in" onchange="S.settings.market=this.value;save()">${MARKETS.map(([m])=>`<option ${S.settings.market===m?'selected':''}>${m}</option>`).join('')}</select></label></div></section>
+      <label>Default market<select class="in" onchange="S.settings.market=this.value;save()">${MARKETS.map(([m])=>`<option ${S.settings.market===m?'selected':''}>${m}</option>`).join('')}</select></label></div></section>`:''}
     <section class="card"><div class="card-h"><h2>Document extraction</h2></div><div id="health" class="p muted">${window.__health?(window.__health.ok?(window.__health.live?`${pill('good','Live')} Claude reads uploaded documents (${esc(window.__health.model)}).`:`${pill('warn','Simulated')} Server running without an API key.`):`${pill('crit','No server')} Open the app through <code>npm start</code> to enable extraction.`):'Checking server…'}</div>
       <p class="p muted">With <code>ANTHROPIC_API_KEY</code> in <code>.env</code>, uploads are read by Claude on your own server. Without it the app simulates extraction so you can still see the flow.</p></section>
     ${ME?`<section class="card"><div class="card-h"><h2>Team</h2><button class="btn sm" data-act="invite">+ Invite</button></div>
@@ -702,9 +722,9 @@ function showAuth(tab){
   $('#view').innerHTML=`<div class="auth"><div class="auth-card">
     <div class="logo" style="padding:0 0 14px"><span class="mark">CW</span><span class="name">ClearWay</span></div>
     <h1>${tab==='login'?'Sign in':'Create your account'}</h1>
-    <p class="muted">${tab==='login'?'Your shipments, products and team are saved to your workspace.':'One account per person. Your company gets its own workspace; invite your factory, forwarder and broker later.'}</p>
+    <p class="muted">${tab==='login'?'Your shipments, products and team are saved to your workspace.':'One account per person, one role. Importers get a workspace and invite their factory, forwarder and broker; if you were invited, sign up with the invited email and you\'ll land in that workspace.'}</p>
     <form id="authForm" class="form">
-      ${tab==='signup'?`<label>Company (importer of record)<input class="in" name="company" placeholder="e.g. Northwind Imports LLC" required></label>`:''}
+      ${tab==='signup'?`<label>I am the…<select class="in" name="role">${ROLES.map(r=>`<option value="${r[0]}">${r[0]} — ${r[1]}</option>`).join('')}</select></label><label>Your company<input class="in" name="company" placeholder="e.g. Northwind Imports LLC / Shenzhen Luxin Electronics" required></label>`:''}
       <label>Email<input class="in" name="email" type="email" autocomplete="username" required></label>
       <label>Password<input class="in" name="password" type="password" autocomplete="${tab==='login'?'current-password':'new-password'}" minlength="8" required>${tab==='signup'?'<small class="muted">At least 8 characters</small>':''}</label>
       <div class="auth-err" id="authErr"></div>
@@ -715,7 +735,7 @@ function showAuth(tab){
   </div></div>`;
   $('#nav').innerHTML='';$('#role').innerHTML='';$('#account').innerHTML='';
   $('#authSwap').onclick=e=>{e.preventDefault();showAuth(tab==='login'?'signup':'login');};
-  $('#authLocal').onclick=e=>{e.preventDefault();MODE='local';S=loadLocal();Object.assign(COSTS,S.costs||{});route();};
+  $('#authLocal').onclick=e=>{e.preventDefault();MODE='local';S=loadLocal();Object.assign(COSTS,S.costs||{});location.hash='#chat';route();if(!S.settings.roleChosen)modal('How will you use ClearWay?',`<div class="form"><label>I am the…<select class="in" id="mRole">${ROLES.map(r=>`<option value="${r[0]}">${r[0]} — ${r[1]}</option>`).join('')}</select></label></div>`,'Continue',()=>{S.settings.role=$('#mRole').value;S.settings.roleChosen=true;save();route();});};
   $('#authForm').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target).entries());const err=$('#authErr');err.textContent='';
     try{const r=await fetch('/api/auth/'+tab,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});const j=await r.json();if(j.error){err.textContent=j.error;return;}
       await enterWorkspace(j.user,tab==='signup'?f.company:null);}
@@ -725,7 +745,8 @@ async function enterWorkspace(user,company){
   ME=user;MODE='server';
   try{const r=await fetch('/api/state');const j=await r.json();WS=j.workspace;S=j.state||emptyState();if(!S.settings)S.settings=emptyState().settings;if(company&&!S.settings.company)S.settings.company=company;if(!S.settings.company&&WS&&WS.name)S.settings.company=WS.name;if(!S.settings.role)S.settings.role=user.role||'Importer';}
   catch(e){S=emptyState();}
-  Object.assign(COSTS,S.costs||{});save();if(!location.hash||location.hash==='#')location.hash='#chat';route();
+  if(company&&user.role==='Importer'&&!S.settings.company)S.settings.company=company;
+  Object.assign(COSTS,S.costs||{});save();location.hash='#chat';route();
 }
 (async()=>{
   let health=null;try{const r=await fetch('/api/health');health=await r.json();}catch(e){}

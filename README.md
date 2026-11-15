@@ -64,7 +64,20 @@ Markets: **US, Canada, EU, UK**. Rules fire on **product attributes** (has a rad
 
 ### Roles
 
-Pick *Importer / Factory / Forwarder / Broker* in the sidebar. The overview shows that role's tasks first; blockers carry an owner; the shipper's letter of instruction and request messages (English / 中文) are how the importer hands work to the factory.
+Each person signs up as one role — **Importer, Factory, Forwarder or Broker** — or gets it from the invite they accept. There is no role switcher: the role decides the navigation, the work queue, the starter prompts in Ask ClearWay, and what's visible.
+
+| Role | Sees | Typical first question |
+|---|---|---|
+| Importer | Whole workspace; edits importer-of-record details, invites the team | "What do I need to import X from Y to Z?" |
+| Factory | Only the shipments and products it supplies; fix text addressed to it | "Which documents do I still owe?" |
+| Forwarder | Shipments, documents, rates; filing data and cut-offs | "Which bookings are missing ISF data?" |
+| Broker | Review queue of assessments/classifications, document packs | "Which assessments need my review?" |
+
+Login always lands on **Ask ClearWay**. Conversations are private to each person; shipments, products and fixes are shared, so when the importer marks an item fixed the factory's list updates.
+
+### Ask ClearWay knows the workspace
+
+The assistant receives a live snapshot (shipments with stage, status, open items and deadlines; products with attributes, certificates and assessments; partners; team) and can: answer questions across it, search everything (shipments, products, partners, open items, rules), and **start things** — new shipment, add product, invite a partner (`invite amy@factory.com as Factory`), run an assessment, mark an item fixed (`mark quantity mismatch on SH-1047 fixed`), advance a shipment. Without an API key a rule-based parser handles these; with a key the model reads the snapshot and answers free-form questions.
 
 ### The journey
 

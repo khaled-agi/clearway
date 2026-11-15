@@ -46,8 +46,17 @@ function parseLocal(text){
   else if(/\b(deadline|due|isf|cut-?off|when do i)\b/.test(low))out.intent='deadlines';
   else if(/\b(where|how)\b.*\b(file|submit|lodge|declare)\b|\b(forms?|7501|carm|ace|cds|single window|portal)\b/.test(low))out.intent='file';
   else if(/\b(cost|duty|tariff|landed|rate|freight|how much)\b/.test(low))out.intent='cost';
-  else if(/\b(import\w*|export\w*|ship\w*|bring\w*|send\w*|sell\w*|moving)\b/.test(low)||/\bwhat do i need\b|\brequirements?\b|\bcompliance\b|\bcertif/.test(low))out.intent='check';
+  else if(/^(which|how many|list|do (we|i) have|who|search)\b/.test(low))out.intent='search';
+  else if(/\b(import\w*|export\w*|shipping|ship|bring\w*|send\w*|sell\w*|moving)\b/.test(low)||/\bwhat do i need\b|\brequirements?\b|\bcompliance\b|\bcertif/.test(low))out.intent='check';
   else if(/^(find|show|open|pull up|get)\b/.test(low))out.intent='find';
+  else if(/^(start|create|add|new|invite|run|mark|advance|move)\b/.test(low)){out.intent='start';
+    if(/\b(invite)\b/.test(low)){out.action='invite';const em=t.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);if(em)out.email=em[0];const rl=['Factory','Forwarder','Broker','Importer'].find(r=>low.includes(r.toLowerCase()));if(rl)out.role=rl;}
+    else if(/\b(assessment|assess)\b/.test(low))out.action='assess';
+    else if(/\bmark\b.*\b(fixed|done|resolved)\b/.test(low)){out.action='markFixed';const bt=t.match(/mark\s+(?:the\s+)?(.+?)\s+(?:as\s+)?(?:fixed|done|resolved)/i);if(bt)out.blockerTitle=bt[1].replace(/\s+(on|for|in)\s+SH-\d+.*$/i,'').replace(/\bSH-\d+\b/i,'').trim();}
+    else if(/\b(advance|move)\b/.test(low))out.action='advance';
+    else if(/\bproduct\b/.test(low))out.action='addProduct';
+    else if(/\bshipment\b|\bupload\b/.test(low))out.action='newShipment';}
+  else if(/\b(which|what|who|how many|list|search|where is|do (we|i) have)\b/.test(low))out.intent='search';
   // entities
   const d=DEST_WORDS.find(([re])=>{const m=low.match(/\b(to|into|in|for)\s+(the\s+)?([a-z. ]{2,25})/);return m&&re.test(m[3]);});if(d)out.dest=d[1];
   if(!out.dest){const d2=DEST_WORDS.find(([re])=>re.test(low.replace(/\bfrom\s+[a-z. ]+/,'')));if(d2&&!/\bfrom\b/.test(low))out.dest=d2[1];}
@@ -67,28 +76,43 @@ function parseLocal(text){
   return out;
 }
 
+/* ---------------- workspace context the assistant reasons over ---------------- */
+function workspaceContext(){
+  const ships=mine(S.shipments).map(s=>{const p=product(s);const dl=nextDeadline(s);return {id:s.id,product:p.name,supplier:p.supplier,origin:originOf(s),dest:s.dest,mode:s.mode,units:s.units,value:s.value,stage:STAGES[stageOf(s)].name,status:STATUS[status(s)][0],readiness:score(s),nextDeadline:dl.label+' '+fmtD(dl.date),eta:fmtD(s.eta),open:openB(s).map(b=>({title:b.title,sev:b.sev,owner:b.owner,fix:b.fix})),docs:s.docs,carrier:s.carrier||null,container:s.container||null};});
+  const prods=S.products.map(p=>({id:p.id,name:p.name,supplier:p.supplier,markets:p.markets,category:p.category||null,attrs:Object.keys(attrsOf(p)).filter(k=>attrsOf(p)[k]),certs:(p.certs||[]).map(c=>c.name+' ('+c.status+')'),assessments:Object.entries(p.assess||{}).map(([m,a])=>({market:m,at:fmtD(a.at),reviewed:a.reviewed?a.reviewed.by:null,code:a.result&&a.result.classification&&a.result.classification.code,requirements:(a.result&&a.result.requirements||[]).length}))}));
+  const partners=S.partners.map(x=>({name:x.name,type:x.type,country:x.country,contact:x.contact}));
+  return {company:S.settings.company,role:myRole(),defaultMarket:S.settings.market,today:fmtD(new Date()),shipments:ships,products:prods,partners,members:(WS&&WS.members)||[],costModel:COSTS};
+}
+const ROLE_PROMPTS={
+  Importer:[['What do I need to import Bluetooth kitchen scales from Shenzhen to the US? 1,200 units, $11,400, by sea.'],['What\'s blocking my shipments this week?'],['Draft follow-ups to suppliers with open items.'],['Where do I file the entry for a shipment to Canada?']],
+  Factory:[['Which documents do I still owe, and for which shipments?'],['What must be on the label for the US shipment?'],['Upload the invoice and packing list for the next shipment.'],['What exactly does the importer want changed on the packing list?']],
+  Forwarder:[['Which bookings have ISF or ENS data missing?'],['What are the next cut-offs across all shipments?'],['Which shipments have weight or HS mismatches between the documents and the BL?'],['Freight estimate for Ningbo to Los Angeles, 20 cbm.']],
+  Broker:[['Which assessments are waiting for my review?'],['Show me the classification and rulings for the plush toy.'],['Which shipments can be entered this week, and what\'s missing on the rest?'],['Open the document pack for SH-1047.']],
+};
+
 /* ---------------- chat state ---------------- */
-function chats(){S.chats=S.chats||[];return S.chats;}
-function currentChat(){const id=window.__chatId;let c=chats().find(x=>x.id===id);if(!c){c={id:uid('C'),title:'New chat',at:new Date().toISOString(),messages:[]};chats().unshift(c);window.__chatId=c.id;}return c;}
+const chatOwner=()=>(ME&&ME.email)||'local';
+function chats(){S.chats=S.chats||[];return S.chats.filter(c=>(c.owner||'local')===chatOwner()||(!c.owner&&!ME));}
+function currentChat(){const id=window.__chatId;let c=chats().find(x=>x.id===id);if(!c){c={id:uid('C'),owner:chatOwner(),title:'New chat',at:new Date().toISOString(),messages:[]};S.chats=S.chats||[];S.chats.unshift(c);window.__chatId=c.id;}return c;}
 function newChat(){window.__chatId=null;location.hash='#chat';route();}
 
 /* ---------------- page ---------------- */
 function pageChat(){
   const c=currentChat(); const first=(S.settings.company||'there').split(' ')[0];
   const recent=chats().filter(x=>x.messages.length).slice(0,8);
-  const sugg=[['What do I need to import Bluetooth kitchen scales from Shenzhen to the US? 1,200 units, $11,400, by sea.','check'],['What\'s blocking my shipments this week?','status'],['Draft follow-ups to suppliers with open items.','followups'],['Where do I file the entry for a shipment to Canada?','file']];
+  const sugg=ROLE_PROMPTS[myRole()]||ROLE_PROMPTS.Importer;
   return `<div class="chat-wrap">
     <aside class="chat-side"><button class="btn primary" style="width:100%;justify-content:center" onclick="newChat()">+ New chat</button>
       <div class="cs-h">Recent</div>${recent.map(x=>`<a href="#chat" class="cs-item ${x.id===c.id?'active':''}" onclick="window.__chatId='${x.id}';setTimeout(route,0)">${esc(x.title)}</a>`).join('')||'<div class="muted" style="font-size:12px;padding:4px 8px">No conversations yet</div>'}
-      <div class="cs-h">Pinned</div><a class="cs-item" href="#overview">Work queue <span class="muted">${S.shipments.filter(s=>stageOf(s)<7&&openB(s).length).length}</span></a></aside>
+      <div class="cs-h">Pinned</div><a class="cs-item" href="#overview">Work queue <span class="muted">${mine(S.shipments).filter(s=>stageOf(s)<7&&openB(s).some(b=>myRole()==='Importer'||b.owner.toLowerCase().startsWith(myRole().toLowerCase()))).length}</span></a></aside>
     <section class="chat-main">
       <div class="chat-scroll" id="chatScroll">
-      ${c.messages.length?c.messages.map(renderMsg).join(''):`<div class="chat-welcome"><h1>Welcome, ${esc(first)}.</h1><p>Describe what you're importing or exporting. ClearWay works out the rules, the cost, the documents — and where each form gets filed.</p>
+      ${c.messages.length?c.messages.map(renderMsg).join(''):`<div class="chat-welcome"><h1>Welcome, ${esc(first)}.</h1><p>${myRole()==='Importer'?'Describe what you\'re importing or exporting. ClearWay works out the rules, the cost, the documents — and where each form gets filed.':myRole()==='Factory'?'Ask what documents and labels the importer needs from you, upload them here, and see what still needs fixing.':myRole()==='Forwarder'?'Ask which bookings are missing filing data, what the cut-offs are, and where documents disagree with the BL.':'Ask which assessments and classifications need your review, and open the document packs ready for entry.'}</p>
         <div class="cs-h" style="margin-top:28px">How about we start with…</div>${sugg.map(([q])=>`<button class="sugg" onclick="sendChat(${JSON.stringify(q).replace(/"/g,'&quot;')})">${esc(q)}</button>`).join('')}
         <div class="hint" style="margin-top:14px">Tip: mention a product or shipment by name (or type @ to pick one) to ask about it.</div></div>`}
       </div>
       <form class="composer" id="composer" onsubmit="event.preventDefault();sendChat(document.getElementById('chatIn').value)">
-        <textarea id="chatIn" rows="1" placeholder="e.g. I'm importing kids wooden puzzles from Vietnam to Germany, 3,000 units…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat(this.value);}" oninput="this.style.height='auto';this.style.height=Math.min(160,this.scrollHeight)+'px'"></textarea>
+        <textarea id="chatIn" rows="1" placeholder="${({Importer:'e.g. I\'m importing kids wooden puzzles from Vietnam to Germany, 3,000 units…',Factory:'e.g. What do I still owe? · What must the US label say for the kitchen scale?',Forwarder:'e.g. Which bookings are missing ISF data? · Next cut-offs',Broker:'e.g. Which assessments need my review? · Open the pack for SH-1047'})[myRole()]}" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat(this.value);}" oninput="this.style.height='auto';this.style.height=Math.min(160,this.scrollHeight)+'px'"></textarea>
         <div class="comp-f"><button type="button" class="btn sm ghost" onclick="refPicker()" title="Reference a product or shipment">@</button><button type="button" class="btn sm ghost" onclick="ACTIONS.new({})" title="Upload documents">📎</button><span style="flex:1"></span><button class="btn primary sm" type="submit">↑</button></div>
       </form>
     </section></div>`;
@@ -97,13 +121,13 @@ function renderMsg(m){
   if(m.role==='user')return `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`;
   return `<div class="msg bot"><div class="av" style="background:var(--accent)">CW</div><div class="bubble">${m.html||esc(m.text||'')}${m.actions&&m.actions.length?`<div class="chips" style="margin-top:12px">${m.actions.map(a=>`<button class="btn sm ${a.primary?'primary':''}" onclick="${a.onclick}">${esc(a.label)}</button>`).join('')}</div>`:''}</div></div>`;
 }
-function refPicker(){const items=[...S.products.map(p=>['product',p.name]),...S.shipments.map(s=>['shipment',product(s).name+' ('+s.id+')'])];modal('Reference a record',`<div class="list" style="max-height:50vh;overflow:auto">${items.map(([k,n])=>`<div class="li" style="cursor:pointer" onclick="document.getElementById('chatIn').value+=' ${esc(n)} ';document.getElementById('modal').classList.remove('open');document.getElementById('chatIn').focus()"><span class="pill neutral" style="min-width:0">${k}</span><div class="li-b"><div class="li-t">${esc(n)}</div></div></div>`).join('')||'<div class="muted p" style="padding:12px">Nothing yet — add a product first.</div>'}</div>`,null);}
+function refPicker(){const items=[...S.products.map(p=>['product',p.name]),...mine(S.shipments).map(s=>['shipment',product(s).name+' ('+s.id+')'])];modal('Reference a record',`<div class="list" style="max-height:50vh;overflow:auto">${items.map(([k,n])=>`<div class="li" style="cursor:pointer" onclick="document.getElementById('chatIn').value+=' ${esc(n)} ';document.getElementById('modal').classList.remove('open');document.getElementById('chatIn').focus()"><span class="pill neutral" style="min-width:0">${k}</span><div class="li-b"><div class="li-t">${esc(n)}</div></div></div>`).join('')||'<div class="muted p" style="padding:12px">Nothing yet — add a product first.</div>'}</div>`,null);}
 async function sendChat(text){
   text=(text||'').trim();if(!text)return;const c=currentChat();
   c.messages.push({role:'user',text});if(c.title==='New chat')c.title=text.slice(0,48);save();route();
   const thinking={role:'bot',html:'<span class="muted">Thinking…</span>'};c.messages.push(thinking);route();scrollChat();
   let parsed=null;
-  if(window.__health&&window.__health.live){try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,products:S.products.map(p=>p.name),shipments:S.shipments.map(s=>s.id)})});const j=await r.json();if(j&&j.intent){parsed=j;if(j.productName){const pr=S.products.find(x=>x.name.toLowerCase()===String(j.productName).toLowerCase());if(pr)parsed.productId=pr.id;}}}catch(e){}}
+  if(window.__health&&window.__health.live){try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,role:myRole(),context:workspaceContext()})});const j=await r.json();if(j&&j.intent){parsed=j;if(j.productName){const pr=S.products.find(x=>x.name.toLowerCase()===String(j.productName).toLowerCase());if(pr)parsed.productId=pr.id;}}}catch(e){}}
   if(!parsed)parsed=parseLocal(text);
   const reply=await answer(parsed,text);
   c.messages.splice(c.messages.indexOf(thinking),1);c.messages.push({role:'bot',...reply});save();route();scrollChat();
@@ -142,7 +166,7 @@ async function answer(p,text){
     return {html,actions};
   }
   if(p.intent==='status'){
-    const active=S.shipments.filter(s=>stageOf(s)<7);const blocked=active.filter(s=>status(s)==='crit'),warn=active.filter(s=>status(s)==='warn');
+    const active=mine(S.shipments).filter(s=>stageOf(s)<7);const blocked=active.filter(s=>status(s)==='crit'),warn=active.filter(s=>status(s)==='warn');
     const items=[];active.forEach(s=>openB(s).forEach(b=>items.push({s,b,i:impact(b.kind,{units:s.units,value:s.value}),dl:nextDeadline(s)})));items.sort((a,b)=>(a.b.sev==='crit'?0:1)-(b.b.sev==='crit'?0:1)||daysUntil(a.dl.date)-daysUntil(b.dl.date));
     const ex=active.map(exposure);const low=ex.reduce((a,e)=>a+e.low,0),high=ex.reduce((a,e)=>a+e.high,0);
     if(!active.length)return {html:'<p>No active shipments yet. Describe one and I\'ll set it up, or upload the factory\'s documents.</p>',actions:[{label:'New shipment',primary:true,onclick:'ACTIONS.new({})'}]};
@@ -150,13 +174,13 @@ async function answer(p,text){
     return {html,actions:[{label:'Open work queue',primary:true,onclick:"location.hash='overview'"},{label:'Draft supplier follow-ups',onclick:"sendChat('Draft follow-ups to suppliers with open items')"}]};
   }
   if(p.intent==='followups'){
-    const bySup={};S.shipments.filter(s=>stageOf(s)<7).forEach(s=>openB(s).filter(b=>/factory/i.test(b.owner)).forEach(b=>{(bySup[product(s).supplier]=bySup[product(s).supplier]||[]).push({...b,sid:s.id,pname:product(s).name});}));
+    const bySup={};mine(S.shipments).filter(s=>stageOf(s)<7).forEach(s=>openB(s).filter(b=>/factory/i.test(b.owner)).forEach(b=>{(bySup[product(s).supplier]=bySup[product(s).supplier]||[]).push({...b,sid:s.id,pname:product(s).name});}));
     const sups=Object.keys(bySup);if(!sups.length)return {html:'<p>Nothing is waiting on a supplier right now.</p>'};
     const html=`<p>${sups.length} supplier${sups.length>1?'s have':' has'} items waiting on them. Each message is pre-written in English and 中文 — open one to copy it.</p><ul class="chat-list">${sups.map(n=>`<li><b>${esc(n)}</b> <span class="muted">· ${bySup[n].length} item${bySup[n].length>1?'s':''}: ${bySup[n].slice(0,3).map(b=>esc(b.title)).join('; ')}</span></li>`).join('')}</ul>`;
     return {html,actions:sups.slice(0,4).map(n=>({label:'Message '+n.split(' ')[0],onclick:`(function(){const p=S.partners.find(x=>x.name===${JSON.stringify(n)});ACTIONS.askPartner({p:p?p.id:''});})()`}))};
   }
   if(p.intent==='deadlines'){
-    const list=S.shipments.filter(s=>stageOf(s)<6).map(s=>({s,dl:nextDeadline(s)})).sort((a,b)=>daysUntil(a.dl.date)-daysUntil(b.dl.date)).slice(0,8);
+    const list=mine(S.shipments).filter(s=>stageOf(s)<6).map(s=>({s,dl:nextDeadline(s)})).sort((a,b)=>daysUntil(a.dl.date)-daysUntil(b.dl.date)).slice(0,8);
     return {html:list.length?`<ul class="chat-list">${list.map(({s,dl})=>`<li><b>${fmtD(dl.date)}</b> (${daysUntil(dl.date)<=0?'today':daysUntil(dl.date)+'d'}) — ${esc(dl.label)} · <a href="#shipment-${s.id}">${esc(product(s).name)}</a> ${statusPill(s)}</li>`).join('')}</ul><p class="muted" style="font-size:12.5px">ISF is due 24 h before loading for US ocean cargo; late filing is $5,000 per violation.</p>`:'<p>No upcoming deadlines.</p>'};
   }
   if(p.intent==='file'){
@@ -171,13 +195,41 @@ async function answer(p,text){
     const units=p.units||1000,value=p.value||units*9;window.__rt={origin,dest,mode,cbm:Math.max(1,Math.round(units/60)),kg:Math.round(units*0.5),value};
     return {html:`<p>Opening the lane estimate for ${esc(COUNTRIES[origin]||origin)} → ${dest} by ${mode.toLowerCase()} on ${money(value)} of goods: freight range, every destination fee, and duty from the classification.</p>`,actions:[{label:'Open Rates & fees',primary:true,onclick:"location.hash='rates'"}]};
   }
+  if(p.intent==='answer'&&p.answer){
+    const rel=(p.related||[]).map(r=>r.type==='shipment'?S.shipments.find(s=>s.id===r.id):S.products.find(x=>x.id===r.id||x.name===r.id)).filter(Boolean);
+    return {html:`<p>${esc(p.answer).replace(/\n/g,'<br>')}</p>`,actions:rel.slice(0,4).map(r=>r.productId!==undefined?{label:'Open '+r.id,onclick:`location.hash='shipment-${r.id}'`}:{label:'Open '+r.name,onclick:`location.hash='product-${r.id}'`})};
+  }
+  if(p.intent==='search'){
+    const q=text.toLowerCase().replace(/[?.,!]/g,'');const words=q.split(/\s+/).filter(w=>w.length>3&&!/^(which|what|where|does|have|with|that|this|from|about|their|there|shipments?|products?|documents?)$/.test(w));
+    const hit=str=>words.some(w=>String(str||'').toLowerCase().includes(w));
+    const ships=mine(S.shipments).filter(s=>hit(product(s).name)||hit(product(s).supplier)||hit(s.id)||openB(s).some(b=>hit(b.title)||hit(b.detail))||hit(s.dest)||hit(s.carrier)||hit(s.container));
+    const prods=S.products.filter(p=>hit(p.name)||hit(p.desc)||hit(p.supplier)||(p.certs||[]).some(c=>hit(c.name)));
+    const partners=S.partners.filter(x=>hit(x.name)||hit(x.contact)||hit(x.type));
+    const rules=CATALOG.filter(r=>hit(r.name)||hit(r.plain)||hit(r.agency)).slice(0,5);
+    const blockers=[];mine(S.shipments).forEach(s=>openB(s).forEach(b=>{if(hit(b.title)||hit(b.detail))blockers.push({s,b});}));
+    // role-specific "what do I owe"
+    if(/\b(owe|owing|still need to (send|provide)|my (tasks|items)|waiting on (me|us))\b/.test(q)){const r=myRole();const items=[];mine(S.shipments).forEach(s=>openB(s).forEach(b=>{if(b.owner.toLowerCase().startsWith(r.toLowerCase()))items.push({s,b});}));return {html:items.length?`<p><b>${items.length} item${items.length>1?'s':''} waiting on you.</b></p><ul class="chat-list">${items.map(({s,b})=>`<li><a href="#shipment-${s.id}"><b>${esc(b.title)}</b></a> <span class="muted">· ${esc(product(s).name)} (${s.id}) · ${esc(fixFor(b))} · ${nextDeadline(s).label} ${fmtD(nextDeadline(s).date)}</span></li>`).join('')}</ul>`:'<p>Nothing is waiting on you right now.</p>',actions:items.slice(0,3).map(({s,b})=>({label:'Mark “'+(b.title.length>28?b.title.slice(0,26)+'…':b.title)+'” done',onclick:`ACTIONS.fixed({id:'${s.id}',b:'${b.id}'});sendChat('What is waiting on me?')`}))};}
+    if(!ships.length&&!prods.length&&!partners.length&&!blockers.length&&!rules.length)return {html:`<p>I searched shipments, products, partners, open items and the rules catalog for “${esc(words.join(' '))}” and found nothing. ${window.__health&&window.__health.live?'':'With an API key configured I can answer free-form questions about the workspace too.'}</p>`};
+    const html=`<p>Here\'s what matches across the workspace:</p>${blockers.length?`<div class="cs-h" style="margin:8px 0 4px">Open items</div><ul class="chat-list">${blockers.slice(0,6).map(({s,b})=>`<li><a href="#shipment-${s.id}"><b>${esc(b.title)}</b></a> <span class="muted">· ${esc(product(s).name)} · ${esc(b.owner)}</span></li>`).join('')}</ul>`:''}${ships.length?`<div class="cs-h" style="margin:8px 0 4px">Shipments</div><ul class="chat-list">${ships.slice(0,6).map(s=>`<li><a href="#shipment-${s.id}"><b>${esc(product(s).name)}</b> ${s.id}</a> <span class="muted">· ${STAGES[stageOf(s)].short} · ${STATUS[status(s)][0]} · ETA ${fmtD(s.eta)}</span></li>`).join('')}</ul>`:''}${prods.length?`<div class="cs-h" style="margin:8px 0 4px">Products</div><ul class="chat-list">${prods.slice(0,6).map(p=>`<li><a href="#product-${p.id}"><b>${esc(p.name)}</b></a> <span class="muted">· ${esc(p.supplier)} · ${p.markets.join(', ')}${Object.keys(p.assess||{}).length?' · assessed':''}</span></li>`).join('')}</ul>`:''}${partners.length?`<div class="cs-h" style="margin:8px 0 4px">Partners</div><ul class="chat-list">${partners.slice(0,4).map(x=>`<li><b>${esc(x.name)}</b> <span class="muted">· ${x.type} · ${esc(x.contact||'')}</span></li>`).join('')}</ul>`:''}${rules.length?`<div class="cs-h" style="margin:8px 0 4px">Rules</div><ul class="chat-list">${rules.map(r=>`<li><b>${esc(r.name)}</b> <span class="muted">· ${r.m.join('/')} · ${esc(r.agency)}</span></li>`).join('')}</ul>`:''}`;
+    return {html,actions:[...ships.slice(0,2).map(s=>({label:'Open '+s.id,onclick:`location.hash='shipment-${s.id}'`})),...prods.slice(0,2).map(p=>({label:'Open '+p.name.slice(0,22),onclick:`location.hash='product-${p.id}'`}))]};
+  }
+  if(p.intent==='start'){
+    const a=p.action||'';const prod=p.productId?S.products.find(x=>x.id===p.productId):(p.productName?S.products.find(x=>x.name.toLowerCase()===String(p.productName).toLowerCase()):null);const sh=p.shipmentId?S.shipments.find(s=>s.id===p.shipmentId):null;
+    if(a==='newShipment'){setTimeout(()=>openWizard(prod?{productId:prod.id}:{}),50);return {html:`<p>Starting a new shipment${prod?' of <b>'+esc(prod.name)+'</b>':''} — drop the factory\'s documents in the window that just opened.</p>`};}
+    if(a==='addProduct'){setTimeout(()=>ACTIONS.addProduct(),50);return {html:'<p>Opening the product form. Describe it plainly — materials, function, who it\'s for, battery or radio — and pick a category.</p>'};}
+    if(a==='invite'){if(!ME)return {html:'<p>Invites need an account — sign in first (Settings → Team).</p>'};const role=p.role||'Factory';if(p.email){try{const r=await fetch('/api/invite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:p.email,role})});const j=await r.json();if(j.error)return {html:`<p>${esc(j.error)}</p>`};WS.invites=j.invites;save();return {html:`<p>Invited <b>${esc(p.email)}</b> as ${esc(role)}. When they sign up with that email they land in this workspace with the ${role} view.</p>`,actions:[{label:'Team settings',onclick:"location.hash='settings'"}]};}catch(e){return {html:'<p>Server not reachable.</p>'};}}setTimeout(()=>ACTIONS.invite(),50);return {html:'<p>Opening the invite form.</p>'};}
+    if(a==='assess'){if(!prod)return {html:'<p>Which product? Say its name as it appears in Products, e.g. “run an assessment for Plush toy for the US”.</p>'};const m=p.dest||prod.markets[0]||S.settings.market;location.hash='product-'+prod.id;setTimeout(()=>{const b=document.querySelector(`[data-act="assess"][data-m="${m}"]`);if(b&&!b.disabled)b.click();else toast('Assessments need ANTHROPIC_API_KEY on the server');},400);return {html:`<p>Running the ${m} assessment for <b>${esc(prod.name)}</b> — opening the product page; it takes about a minute.</p>`};}
+    if(a==='markFixed'){const cands=sh?[sh]:mine(S.shipments);let found=null;for(const s of cands){const b=openB(s).find(b=>p.blockerTitle&&b.title.toLowerCase().includes(String(p.blockerTitle).toLowerCase().slice(0,18)));if(b){found={s,b};break;}}if(!found)return {html:'<p>I couldn\'t find that open item. Say part of its title and the shipment id, e.g. “mark quantity mismatch on SH-1047 fixed”.</p>'};ACTIONS.fixed({id:found.s.id,b:found.b.id});return {html:`<p>Marked <b>${esc(found.b.title)}</b> fixed on ${found.s.id}. Readiness is now ${score(found.s)}.</p>`,actions:[{label:'Open '+found.s.id,onclick:`location.hash='shipment-${found.s.id}'`}]};}
+    if(a==='advance'){if(!sh)return {html:'<p>Which shipment? Include its id, e.g. “advance SH-1047”.</p>'};const cur=stageOf(sh);if(cur>=7)return {html:`<p>${sh.id} is already released.</p>`};ACTIONS.stage({id:sh.id,dir:1});return {html:`<p>${openB(sh).some(b=>b.sev==='crit')?'That shipment has blocking items — I opened the override dialog so you can decide.':'Advanced <b>'+sh.id+'</b> to '+STAGES[Math.min(7,cur+1)].name+'.'}</p>`,actions:[{label:'Open '+sh.id,onclick:`location.hash='shipment-${sh.id}'`}]};}
+    return {html:'<p>I can start a shipment, add a product, invite a partner, run an assessment, mark an item fixed, or advance a shipment. Which one?</p>'};
+  }
   if(p.intent==='find'){
     const prod=p.productId?S.products.find(x=>x.id===p.productId):null;const sh=p.shipmentId?S.shipments.find(s=>s.id===p.shipmentId):null;
     if(sh)return {html:`<p><b>${esc(product(sh).name)}</b> (${sh.id}) — ${STAGES[stageOf(sh)].name}, readiness ${score(sh)}, ${openB(sh).length} open item${openB(sh).length===1?'':'s'}.</p>`,actions:[{label:'Open shipment',primary:true,onclick:`location.hash='shipment-${sh.id}'`},{label:'Document pack',onclick:`location.hash='docs-${sh.id}'`}]};
     if(prod){const ships=S.shipments.filter(s=>s.productId===prod.id);return {html:`<p><b>${esc(prod.name)}</b> — ${esc(prod.supplier)}, markets ${prod.markets.join(', ')}, ${ships.length} shipment${ships.length===1?'':'s'}${Object.keys(prod.assess||{}).length?', assessment on file':''}.</p>`,actions:[{label:'Open product',primary:true,onclick:`location.hash='product-${prod.id}'`},{label:'New shipment of it',onclick:`ACTIONS.new({p:'${prod.id}'})`}]};}
     return {html:'<p>I couldn\'t match that to a product or shipment. Try the name as it appears in Records, or type @ to pick one.</p>'};
   }
-  return {html:`<p>I can help with four things: <b>check a product</b> ("what do I need to import X from Y to Z"), <b>status</b> ("what's blocked this week"), <b>filing</b> ("where do I file for Canada"), and <b>messages</b> ("draft follow-ups to suppliers"). Mention a product or shipment by name to ask about it.</p>`,actions:[{label:'Check a product',onclick:"document.getElementById('chatIn').value='What do I need to import ';document.getElementById('chatIn').focus()"},{label:'What\'s blocked?',onclick:"sendChat('What is blocked this week?')"}]};
+  return {html:`<p>I know everything in this workspace — ${mine(S.shipments).length} shipments, ${S.products.length} products, ${S.partners.length} partners, open items, assessments and deadlines — and I can start things. Try: <b>check a product</b> ("what do I need to import X from Y to Z"), <b>status</b> ("what's blocked this week"), <b>filing</b> ("where do I file for Canada"), and <b>messages</b> ("draft follow-ups to suppliers"). Mention a product or shipment by name to ask about it.</p>`,actions:[{label:'Check a product',onclick:"document.getElementById('chatIn').value='What do I need to import ';document.getElementById('chatIn').focus()"},{label:'What\'s blocked?',onclick:"sendChat('What is blocked this week?')"}]};
 }
 function chatSaveProduct(thenAssess){
   const w=window.__pending;if(!w)return;const defaults=deriveAttrs(w.desc);

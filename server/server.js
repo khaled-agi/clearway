@@ -28,7 +28,7 @@ const MAX_BODY = 40 * 1024 * 1024;
 const DATA = path.join(__dirname, '..', 'data');
 fs.mkdirSync(path.join(DATA, 'workspaces'), { recursive: true });
 const readJsonFile = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
-const writeJsonFile = (f, o) => fs.writeFileSync(f, JSON.stringify(o, null, 1));
+const writeJsonFile = (f, o) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o, null, 1)); };
 const USERS = () => readJsonFile(path.join(DATA, 'users.json'), { users: [], sessions: {} });
 const saveUsers = (u) => writeJsonFile(path.join(DATA, 'users.json'), u);
 
@@ -73,7 +73,7 @@ function currentUser(req) { const u = USERS(); const sid = cookies(req).cw_sessi
 function hashPw(pw, salt) { salt = salt || crypto.randomBytes(16).toString('hex'); return salt + ':' + crypto.scryptSync(pw, salt, 32).toString('hex'); }
 function checkPw(pw, stored) { const [salt, h] = stored.split(':'); return crypto.timingSafeEqual(Buffer.from(h, 'hex'), crypto.scryptSync(pw, salt, 32)); }
 function setSession(res, db, userId) { const sid = crypto.randomBytes(24).toString('hex'); db.sessions[sid] = { userId, at: Date.now() }; saveUsers(db); res.setHeader('set-cookie', `cw_session=${sid}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}`); }
-const publicUser = u => ({ id: u.id, email: u.email, name: u.name, workspaceId: u.workspaceId, role: u.role });
+const publicUser = u => ({ id: u.id, email: u.email, name: u.name, company: u.company || '', workspaceId: u.workspaceId, role: u.role });
 const wsFile = id => path.join(DATA, 'workspaces', id + '.json');
 
 async function auth(req, res, url) {
@@ -86,10 +86,12 @@ async function auth(req, res, url) {
     if (String(body.password || '').length < 8) return json(res, 400, { error: 'Password must be at least 8 characters.' });
     const db = USERS(); if (db.users.some(u => u.email === email)) return json(res, 409, { error: 'An account with this email already exists — sign in instead.' });
     // invited? join the inviting workspace
-    let wsId = null, role = 'Importer';
-    for (const f of fs.readdirSync(path.join(DATA, 'workspaces'))) { const ws = readJsonFile(path.join(DATA, 'workspaces', f), null); const inv = ws && (ws.invites || []).find(i => i.email === email); if (inv) { wsId = ws.id; role = inv.role; ws.invites = ws.invites.filter(i => i.email !== email); ws.members.push({ email, role }); writeJsonFile(wsFile(ws.id), ws); break; } }
+    const ROLES = ['Importer', 'Factory', 'Forwarder', 'Broker'];
+    let wsId = null, role = ROLES.includes(body.role) ? body.role : 'Importer';
+    fs.mkdirSync(path.join(DATA, 'workspaces'), { recursive: true });
+    for (const f of fs.readdirSync(path.join(DATA, 'workspaces'))) { const ws = readJsonFile(path.join(DATA, 'workspaces', f), null); const inv = ws && (ws.invites || []).find(i => i.email === email); if (inv) { wsId = ws.id; role = inv.role; ws.invites = ws.invites.filter(i => i.email !== email); ws.members.push({ email, role, company: body.company || '' }); writeJsonFile(wsFile(ws.id), ws); break; } }
     if (!wsId) { wsId = 'ws_' + crypto.randomBytes(6).toString('hex'); writeJsonFile(wsFile(wsId), { id: wsId, name: body.company || email.split('@')[1], members: [{ email, role: 'Importer' }], invites: [], state: null, updatedAt: Date.now() }); }
-    const user = { id: 'u_' + crypto.randomBytes(6).toString('hex'), email, name: body.name || '', pw: hashPw(String(body.password)), workspaceId: wsId, role, createdAt: Date.now() };
+    const user = { id: 'u_' + crypto.randomBytes(6).toString('hex'), email, name: body.name || '', company: body.company || '', pw: hashPw(String(body.password)), workspaceId: wsId, role, createdAt: Date.now() };
     db.users.push(user); setSession(res, db, user.id);
     return json(res, 200, { user: publicUser(user) });
   }
@@ -276,17 +278,31 @@ async function assess(req, res) {
 async function chatIntent(req, res) {
   const b = (await readJson(req)) || {};
   if (!API_KEY) return json(res, 200, { simulated: true });
-  const prompt = `Classify this message from a small importer using a shipment-compliance app, and extract entities. Known products: ${JSON.stringify((b.products || []).slice(0, 50))}. Known shipment ids: ${JSON.stringify((b.shipments || []).slice(0, 50))}.
-Message: """${String(b.text || '').slice(0, 1000)}"""
-Return JSON only: {"intent":"check|status|followups|deadlines|file|cost|find|help","desc":"product description if any","origin":"ISO2 country of manufacture if stated","dest":"US|CA|EU|UK|CN if stated","mode":"Ocean|Air|Express if stated","units":number|null,"value":number|null,"productName":"matching known product name or null","shipmentId":"matching known id or null"}`;
+  const ctx = JSON.stringify(b.context || {}).slice(0, 14000);
+  const prompt = `You are the assistant inside ClearWay, a shipment-compliance app for importers and their factories, forwarders and brokers. The user is a ${b.role || 'Importer'}.
+Workspace snapshot (JSON, may be truncated): ${ctx}
+
+User message: """${String(b.text || '').slice(0, 1200)}"""
+
+Decide what the app should do. Intents:
+- check: user describes a product to import/export (extract desc, origin ISO2, dest US|CA|EU|UK|CN, mode Ocean|Air|Express, units, value)
+- status: what is blocked / at risk / changed
+- followups: draft messages to suppliers/partners
+- deadlines: what is due when
+- file: where/how to file government forms (dest)
+- cost: freight, duty, landed cost
+- find: open a specific product/shipment (productName/shipmentId from snapshot)
+- start: begin an action — one of newShipment, addProduct, invite (email, role), assess (productName, dest), markFixed (shipmentId, blockerTitle), advance (shipmentId)
+- answer: any other question answerable from the snapshot — write the answer in 2–5 sentences, cite record ids/names, no invention
+Return JSON only: {"intent":"...","desc":"","origin":"","dest":"","mode":"","units":null,"value":null,"productName":null,"shipmentId":null,"action":null,"email":null,"role":null,"blockerTitle":null,"answer":null,"related":[{"type":"shipment|product","id":""}]}`;
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-5-5', max_tokens: 300, temperature: 0, messages: [{ role: 'user', content: prompt }] }) });
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-5-5', max_tokens: 700, temperature: 0, messages: [{ role: 'user', content: prompt }] }) });
     if (!r.ok) return json(res, 200, { simulated: true });
     const data = await r.json(); const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
     const j = extractJson(text); if (!j) return json(res, 200, { simulated: true });
-    const out = { intent: j.intent || 'help', desc: j.desc || undefined, origin: j.origin || undefined, dest: j.dest || undefined, mode: j.mode || undefined, units: j.units || undefined, value: j.value || undefined };
-    if (j.productName) out.productName = j.productName; if (j.shipmentId) out.shipmentId = j.shipmentId;
-    json(res, 200, out);
+    const clean = {}; Object.entries(j).forEach(([k, v]) => { if (v !== null && v !== '' && v !== undefined) clean[k] = v; });
+    if (!clean.intent) clean.intent = 'help';
+    json(res, 200, clean);
   } catch (e) { json(res, 200, { simulated: true }); }
 }
 
