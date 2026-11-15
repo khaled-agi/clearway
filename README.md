@@ -21,6 +21,7 @@ It is built for the moment *before booking*, when problems are cheap to fix — 
 | **Shipment detail** | The journey (8 stages, who owns each), a **tracking card** (route map, milestones booked → departed → arrived → released, carrier / vessel / container with a tracking link), every blocker with *why it matters* and *what it costs if not fixed*, three-way document check, classification, required certificates, landed-cost estimate. Mark items fixed, ask the supplier (English / 中文), share with the broker. |
 | **Products** | One record per product: description, markets, classification, requirements on file, certificates with expiry. Every shipment inherits it. |
 | **Documents** | Every document seen, and whether it agrees with the others on the same shipment. |
+| **Knowledge base** | Coverage map per market, official datasets on the server, source registry (US/CA/EU/UK/CN), ingestion status. |
 | **Compliance rules** | Each market's requirements in plain language, who provides them, official links, and what each costs when missing. Includes a "check a product" box. |
 | **Partners** | Factories, forwarders, brokers — with a document-quality score and one-click document requests. |
 | **Document pack** (per shipment) | Destination paperwork prefilled from the product record and your settings: commercial invoice, packing list, ISF 10+2 worksheet (US), CBSA B3/CARM data (Canada), EU/UK declaration data, certificate of origin, and a shipper's letter of instruction for the factory. Missing required fields are highlighted. Print or copy. |
@@ -39,6 +40,18 @@ Shipments can originate anywhere — China is the default, with ports/airports f
 3. **Built-in catalog** (`rules.js`, 60+ rules across US/CA/EU/UK) as the floor when there is no assessment yet, with a coverage badge so nobody mistakes it for complete.
 
 Everything is advisory and says so. The product is designed around the broker confirming, not replacing them.
+
+### Knowledge base (More → Knowledge base)
+
+Markets: **US, Canada, EU, UK, and China as a destination**. The page shows a coverage map (product attribute × market), the official datasets ingested on your server, and a source registry per market — what exists, in what format, how often it changes, and whether ClearWay auto-ingests it, queries it live, needs a manual export, or just links to it.
+
+```bash
+npm run ingest            # USITC HTS (US) + UK Trade Tariff nomenclature (UK, approximates EU)
+npm run ingest -- us      # one market
+```
+Datasets land in `data/kb/` and power offline tariff search (`/api/tariff` falls back to them when the live site is unreachable). Manual exports with documented columns: CBP ACE PGA flag table (`us-pga-flags.csv` — the official HTS→agency map), EU TARIC measures (`eu-taric-measures.csv`), CBSA tariff (`ca-tariff.csv`), GACC tariff (`cn-tariff.csv`).
+
+What "all the compliance data" realistically means: tariff schedules and border measures are machine-readable and ingested; agency flags per code exist as tables (US, EU/UK) and are ingested or queried; product-safety law is text — the catalog (109 rules) encodes the main obligations with official links, and sourced assessments + broker review cover the long tail per product.
 
 ### Bringing your own data
 

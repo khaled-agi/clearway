@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const rules = require('../public/rules.js');
+const kb = require('./knowledge.js');
 
 loadDotEnv();
 const PORT = Number(process.env.PORT || 3000);
@@ -45,6 +46,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/assess') return assess(req, res);
     if (req.method === 'GET' && url.pathname === '/api/measures') return measures(url, res);
     if (req.method === 'GET' && url.pathname === '/api/rulings') return rulings(url, res);
+    if (req.method === 'GET' && url.pathname === '/api/kb') return json(res, 200, kb.status());
+    if (req.method === 'GET' && url.pathname === '/api/pga') return json(res, 200, { code: url.searchParams.get('code'), flags: kb.pgaFlags(url.searchParams.get('code')), note: kb.pgaFlags('0') === null ? 'No local PGA flag table yet — see Knowledge base → US → ACE Appendix PGA.' : 'From CBP ACE Appendix PGA (local copy).' });
+    if (req.method === 'POST' && url.pathname === '/api/kb/ingest') { const c = currentUser(req); if (!c) return json(res, 401, { error: 'sign in required' }); const which = (url.searchParams.get('market') || '').toLowerCase(); if (!kb.INGEST[which]) return json(res, 400, { error: 'market must be one of ' + Object.keys(kb.INGEST).join(',') }); try { return json(res, 200, await kb.INGEST[which]()); } catch (e) { return json(res, 502, { error: String(e.message || e) }); } }
     if (req.method === 'GET' && url.pathname === '/api/rates') return rates(url, res);
     if (req.method === 'GET' && url.pathname === '/api/integrations') return json(res, 200, integrationStatus());
     if (req.method === 'GET') return serveStatic(url.pathname, res);
@@ -220,7 +224,7 @@ const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const ASSESS_SYSTEM = `You are a senior customs and product-compliance analyst advising small importers. You are precise, you cite the legal basis (regulation / CFR / directive / act and section) for every requirement, you distinguish what is mandatory at import (customs/agency will stop the goods) from what is required before sale (market surveillance, marketplaces), and you say plainly when something depends on facts you do not have. You never invent citations: if you are not sure of a source, say so and lower the confidence. Use web search to confirm current rules and rates when they may have changed. Respond with a single JSON object and nothing else.`;
 function assessPrompt(b) {
   const attrs = Object.entries(b.attrs || {}).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none specified';
-  const marketName = { US: 'United States', CA: 'Canada', EU: 'European Union (goods sold in several member states)', UK: 'United Kingdom (Great Britain)' }[b.dest] || b.dest;
+  const marketName = { US: 'United States', CA: 'Canada', EU: 'European Union (goods sold in several member states)', UK: 'United Kingdom (Great Britain)', CN: 'People\'s Republic of China (importing into mainland China for sale, incl. the cross-border e-commerce option)' }[b.dest] || b.dest;
   return `Product: ${b.desc}
 Category: ${b.category || 'unspecified'}
 Product attributes confirmed by the importer: ${attrs}
@@ -331,10 +335,13 @@ async function tariff(url, res) {
       const measures = (j.included || []).filter(i => i.type === 'measure').length;
       return json(res, 200, { dest, source: 'UK Trade Tariff (official)', url: `https://www.trade-tariff.service.gov.uk/commodities/${code}`, hits: [{ code: a.goods_nomenclature_item_id, description: a.formatted_description || a.description, general: a.basic_duty_rate ? String(a.basic_duty_rate).replace(/<[^>]+>/g, '') : '', measures }] });
     }
-    const links = { EU: 'https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=' + code, CA: 'https://www.cbsa-asfc.gc.ca/trade-commerce/tariff-tarif/2026/html/tblmod-eng.html' };
+    const local = kb.localSearch(dest, q, code); if (local) return json(res, 200, { dest, source: local.source, url: null, hits: local.hits });
+    const links = { EU: 'https://ec.europa.eu/taxation_customs/dds2/taric/taric_consultation.jsp?Lang=en&Taric=' + code, CA: 'https://www.cbsa-asfc.gc.ca/trade-commerce/tariff-tarif/2026/html/tblmod-eng.html', CN: 'http://english.customs.gov.cn/' };
     return json(res, 200, { dest, source: null, url: links[dest] || null, hits: [], note: 'No public JSON API for this market; open the official lookup.' });
   } catch (e) {
-    return json(res, 502, { error: String(e.message || e), hint: 'The server could not reach the official tariff site. Check network access.' });
+    const local = kb.localSearch(dest, q, code);
+    if (local) return json(res, 200, { dest, source: local.source, url: null, hits: local.hits, note: 'Live lookup failed (' + String(e.message || e) + '); showing the local copy.' });
+    return json(res, 502, { error: String(e.message || e), hint: 'The server could not reach the official tariff site. Run `npm run ingest` to keep an offline copy.' });
   }
 }
 
