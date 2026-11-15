@@ -32,6 +32,18 @@ It is built for the moment *before booking*, when problems are cheap to fix — 
 
 Shipments can originate anywhere — China is the default, with ports/airports for 30+ origin countries built in (`public/map.js`). Rules are destination-driven; China-specific measures (Section 301, UFLPA) only apply to China-origin goods. Freight estimates scale by origin lane.
 
+### Compliance knowledge — three layers
+
+1. **Sourced assessment (per product, per market).** `POST /api/assess` asks Claude — with live web search — for a structured assessment: classification with duty and additional measures, every requirement with its **legal basis, agency, who provides it, when it's needed, consequence if missing, confidence and source links**, mandatory label elements (incl. language rules), open questions, and rules known to be changing. Stored on the product with the generation date; the UI shows a **broker-review stamp** (reviewed by / when / notes). Needs `ANTHROPIC_API_KEY`.
+2. **Official data joins (no key).** `GET /api/measures` returns the UK Trade Tariff's import *measures and document conditions* for a commodity code — the actual certificate codes customs demands at the border (shown as an approximation for EU, which shares the schema); `GET /api/rulings` searches CBP CROSS for classification precedents; `GET /api/tariff` queries USITC / UK schedules.
+3. **Built-in catalog** (`rules.js`, 60+ rules across US/CA/EU/UK) as the floor when there is no assessment yet, with a coverage badge so nobody mistakes it for complete.
+
+Everything is advisory and says so. The product is designed around the broker confirming, not replacing them.
+
+### Bringing your own data
+
+**Products → Import CSV** (`name, description, category, supplier, markets`) and **Shipments → Import CSV** (`product, origin, destination, mode, units, value, load_date, eta`).
+
 ### Markets, attributes and rule coverage
 
 Markets: **US, Canada, EU, UK**. Rules fire on **product attributes** (has a radio, contains a battery, for children, touches food, cosmetic, textile, wood, chemical, medical, food, sold to consumers) that are derived from the description and can be corrected on the product page. Every requirement says *why it applies*, who provides it, links to the official agency page, and what it costs when missing. Each product shows a **rule coverage** badge per market — the catalog (50+ rules) is deep for electronics, children's products, food-contact goods and consumer labelling (including Canada's bilingual/Quebec French rules and EU local-language requirements) and a starting point elsewhere. It is a starting point, not legal advice: confirm with a broker.
@@ -124,6 +136,21 @@ Returns `{ simulated: false, ex: { inv, pl, bl }, classification: { code, text, 
 | Cost estimates | Heuristic ranges from the editable cost model — for prioritisation, not quotes. |
 | Accounts & persistence | Real: email/password accounts, server-side workspaces (JSON files), team invites. No email sending yet. |
 | Supplier portal, broker share links | Not yet — invites + the document pack cover it for now. |
+
+## Is it ready for a customer on day 1?
+
+Honest status: it is ready for a **design-partner pilot**, not for self-serve sales. What a first customer needs and where each stands:
+
+| Need | Status |
+|---|---|
+| Load their own catalog and shipments in minutes | CSV import ✅; forwarder email/PDF ingestion ❌ |
+| Compliance content they can trust | Sourced assessments + official data + broker-review stamp ✅; broker-reviewed rules table ❌ (comes from the pilot) |
+| An artifact they hand to broker/factory in week 1 | Document pack, fix requests (EN/中文), readiness report ✅ |
+| Accounts, team, roles | ✅ (pilot-grade auth; hosted IdP before public launch) |
+| Hosting, backups, HTTPS, data retention | ❌ — run on a small VPS or Render/Fly with Postgres before onboarding |
+| Pricing and terms | ❌ — suggested: free pilot for 3 importers for 60 days in exchange for weekly feedback and a broker introduction |
+
+Pilot success looks like: 10 real shipments checked before booking, at least one hold avoided that the customer can name, and a broker who says the pack saved them time.
 
 ## Roadmap
 

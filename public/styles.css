@@ -253,3 +253,6 @@ a.tile:hover{border-color:#cfcdc4}
 .leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.7)}
 .maplibregl-popup-content{font-family:inherit;font-size:12px;border-radius:8px;box-shadow:var(--shadow);padding:7px 10px}.maplibregl-ctrl-attrib{font-size:10px}
 .map-style{position:absolute;left:28px;top:10px;z-index:2;box-shadow:var(--shadow)}
+
+.assess .chk small{line-height:1.5} .assess .chk b{margin-right:4px}
+.src{padding:6px 18px 10px;font-size:12px} .src summary{cursor:pointer;color:var(--muted)} .src ul{margin:6px 0 0;padding-left:18px;color:var(--ink-2)} .src a{color:var(--accent)}

@@ -42,6 +42,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/invite') return invite(req, res);
     if (req.method === 'POST' && url.pathname === '/api/analyze') return analyze(req, res);
     if (req.method === 'GET' && url.pathname === '/api/tariff') return tariff(url, res);
+    if (req.method === 'POST' && url.pathname === '/api/assess') return assess(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/measures') return measures(url, res);
+    if (req.method === 'GET' && url.pathname === '/api/rulings') return rulings(url, res);
     if (req.method === 'GET' && url.pathname === '/api/rates') return rates(url, res);
     if (req.method === 'GET' && url.pathname === '/api/integrations') return json(res, 200, integrationStatus());
     if (req.method === 'GET') return serveStatic(url.pathname, res);
@@ -206,6 +209,99 @@ function extractJson(text) {
   try { return JSON.parse(m[0]); } catch { return null; }
 }
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
+/* ------------------------------------------------------------------
+   Compliance assessment — Claude with live web search, structured and sourced.
+   POST /api/assess { desc, attrs, category, dest, origin, hs }
+   → { simulated:false, assessment:{...}, sources:[{title,url}], model, at }
+   The assessment is advisory: every item carries a legal basis, a source and a confidence,
+   and the UI records whether a licensed broker has reviewed it.
+   ------------------------------------------------------------------ */
+const ASSESS_SYSTEM = `You are a senior customs and product-compliance analyst advising small importers. You are precise, you cite the legal basis (regulation / CFR / directive / act and section) for every requirement, you distinguish what is mandatory at import (customs/agency will stop the goods) from what is required before sale (market surveillance, marketplaces), and you say plainly when something depends on facts you do not have. You never invent citations: if you are not sure of a source, say so and lower the confidence. Use web search to confirm current rules and rates when they may have changed. Respond with a single JSON object and nothing else.`;
+function assessPrompt(b) {
+  const attrs = Object.entries(b.attrs || {}).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none specified';
+  const marketName = { US: 'United States', CA: 'Canada', EU: 'European Union (goods sold in several member states)', UK: 'United Kingdom (Great Britain)' }[b.dest] || b.dest;
+  return `Product: ${b.desc}
+Category: ${b.category || 'unspecified'}
+Product attributes confirmed by the importer: ${attrs}
+Country of origin / manufacture: ${b.origin || 'CN'}
+Destination market: ${marketName}
+Suggested tariff code (unverified): ${b.hs || 'none'}
+Sold to consumers via retail/marketplaces: ${b.attrs && b.attrs.consumer === false ? 'no (B2B)' : 'yes'}
+
+Produce a complete compliance assessment for importing and selling this product in the destination market. Cover, as applicable: tariff classification (confirm or correct the suggested code, with the duty rate and any additional measures for this origin such as Section 301/232/IEEPA, anti-dumping, CBAM), import filings (ISF/ENS/eManifest, prior notice), agency requirements (e.g. FCC, FDA, CPSC, EPA, DOT/PHMSA, USDA, ISED, Health Canada, CBSA, CE directives, GPSR, REACH/RoHS, WEEE, UKCA), mandatory labelling and markings (origin, language, warnings, tracking labels, Responsible Person, bilingual/French rules), certificates and test reports the factory must supply, registrations the importer must hold, and anything specific to the origin country (e.g. forced-labour rules). If a product fact would change the answer (e.g. whether it is marketed to children, battery watt-hours, materials), list it under questions.
+
+Return exactly this JSON shape:
+{
+ "classification": {"code":"", "description":"", "duty":"", "additional_measures":["..."], "rationale":"", "confidence":0-100, "rulings":[{"number":"", "summary":"", "url":""}]},
+ "requirements": [
+   {"id":"short-slug", "name":"", "kind":"cert|label|filing|registration|classification|test", "stage":"before-shipping|at-import|before-sale",
+    "mandatory":true, "agency":"", "legal_basis":"", "applies_because":"", "what_you_need":"", "who_provides":"Factory|Importer|Forwarder|Broker|Test lab",
+    "consequence_if_missing":"", "confidence":0-100, "sources":[{"title":"","url":""}]}
+ ],
+ "labelling": [{"element":"", "rule":"", "language":"", "where":"product|packaging|leaflet|listing", "legal_basis":"", "sources":[{"title":"","url":""}]}],
+ "questions": ["facts about the product that would change this assessment"],
+ "watch": ["rules or rates known to be changing, with dates if known"],
+ "overall_confidence": 0-100,
+ "summary": "3–4 sentences a non-specialist can act on"
+}`;
+}
+async function assess(req, res) {
+  const b = (await readJson(req)) || {};
+  if (!b.desc || !b.dest) return json(res, 400, { error: 'desc and dest required' });
+  if (!API_KEY) return json(res, 200, { simulated: true, note: 'ANTHROPIC_API_KEY not set — assessments need the live model.' });
+  const body = { model: MODEL, max_tokens: 6000, temperature: 0, system: ASSESS_SYSTEM, messages: [{ role: 'user', content: assessPrompt(b) }], tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }] };
+  let r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body) });
+  if (!r.ok && r.status === 400) { // web search tool not available on this account/model: retry without it
+    delete body.tools; r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify(body) });
+  }
+  if (!r.ok) { const t = await r.text(); console.error('assess error', r.status, t.slice(0, 400)); return json(res, 502, { error: `Model request failed (${r.status})` }); }
+  const data = await r.json();
+  const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+  const sources = []; (data.content || []).forEach(c => { if (c.type === 'web_search_tool_result' && Array.isArray(c.content)) c.content.forEach(x => { if (x.url) sources.push({ title: x.title || x.url, url: x.url }); }); if (c.citations) c.citations.forEach(ci => { if (ci.url) sources.push({ title: ci.title || ci.url, url: ci.url }); }); });
+  const parsed = extractJson(text);
+  if (!parsed) return json(res, 502, { error: 'Could not parse the assessment', raw: text.slice(0, 2000) });
+  const seen = new Set(); const uniq = sources.filter(x => !seen.has(x.url) && seen.add(x.url)).slice(0, 25);
+  json(res, 200, { simulated: false, assessment: parsed, sources: uniq, model: MODEL, at: new Date().toISOString(), searched: !!body.tools });
+}
+
+/* ------------------------------------------------------------------
+   Official import measures & conditions for a commodity code (UK Trade Tariff API; EU shown as approximation).
+   These are the document codes customs actually demands at the border (e.g. C644, Y900, N853).
+   ------------------------------------------------------------------ */
+async function measures(url, res) {
+  const dest = (url.searchParams.get('dest') || 'UK').toUpperCase(); const code = (url.searchParams.get('code') || '').replace(/[^0-9]/g, '');
+  if (!code) return json(res, 400, { error: 'code required' });
+  try {
+    const c10 = code.padEnd(10, '0').slice(0, 10);
+    const r = await fetch(`https://www.trade-tariff.service.gov.uk/api/v2/commodities/${c10}`, { headers: { accept: 'application/json' } });
+    if (!r.ok) throw new Error('UK Trade Tariff ' + r.status);
+    const j = await r.json(); const inc = j.included || []; const byId = {}; inc.forEach(i => { byId[i.type + ':' + i.id] = i; });
+    const out = inc.filter(i => i.type === 'measure' && i.attributes && i.attributes.import).map(m => {
+      const mt = byId['measure_type:' + (m.relationships.measure_type.data || {}).id]; const geo = byId['geographical_area:' + (m.relationships.geographical_area.data || {}).id];
+      const conds = ((m.relationships.measure_conditions || {}).data || []).map(d => byId['measure_condition:' + d.id]).filter(Boolean).map(c => ({ code: c.attributes.document_code, requirement: (c.attributes.requirement || '').replace(/<[^>]+>/g, ''), action: c.attributes.action, condition: c.attributes.condition }));
+      const duty = (m.attributes.duty_expression && m.attributes.duty_expression.base) ? String(m.attributes.duty_expression.base).replace(/<[^>]+>/g, '') : '';
+      return { type: mt ? mt.attributes.description : 'measure', area: geo ? geo.attributes.description : '', duty, conditions: conds, legal: (m.relationships.legal_acts && m.relationships.legal_acts.data || []).map(l => (byId['legal_act:' + l.id] || {}).attributes).filter(Boolean).map(a => ({ id: a.regulation_code || a.published_date, url: a.regulation_url })) };
+    });
+    // keep measures relevant to this origin: world/all third countries, plus origin-specific; drop ones for unrelated areas
+    const origin = (url.searchParams.get('origin') || 'CN').toUpperCase(); const want = m => !m.area || /all countries|erga omnes|all third countries/i.test(m.area) || new RegExp('\\b' + ({ CN: 'China', VN: 'Viet ?nam', IN: 'India', BD: 'Bangladesh', TR: 'T(ü|u)rk', US: 'United States', MX: 'Mexico' }[origin] || origin) + '\\b', 'i').test(m.area);
+    const filtered = out.filter(want);
+    json(res, 200, { dest, code: c10, source: 'UK Trade Tariff (official)', url: `https://www.trade-tariff.service.gov.uk/commodities/${c10}#import`, approximation: dest !== 'UK', note: dest === 'UK' ? 'Import measures and document conditions as published by HMRC.' : dest === 'EU' ? 'UK measures shown as an approximation of EU TARIC (both derive from the same schema; EU-specific measures may differ). Verify in TARIC.' : 'Shown for reference only; this market has its own schedule.', measures: filtered });
+  } catch (e) { json(res, 502, { error: String(e.message || e) }); }
+}
+
+/* ------------------------------------------------------------------
+   CBP CROSS rulings search (official, public) — precedents for a classification
+   ------------------------------------------------------------------ */
+async function rulings(url, res) {
+  const q = url.searchParams.get('q') || ''; if (!q) return json(res, 400, { error: 'q required' });
+  try {
+    const r = await fetch(`https://rulings.cbp.gov/api/search?term=${encodeURIComponent(q)}&collection=ALL&sortBy=RELEVANCE&pageSize=8&page=1`, { headers: { accept: 'application/json' } });
+    if (!r.ok) throw new Error('CROSS ' + r.status);
+    const j = await r.json(); const list = (j.rulings || j.results || []).slice(0, 8).map(x => ({ number: x.rulingNumber || x.number, subject: x.subject || x.title || '', date: x.rulingDate || x.date || '', tariffs: x.tariffs || x.tariffNumbers || [], url: `https://rulings.cbp.gov/ruling/${x.rulingNumber || x.number}` }));
+    json(res, 200, { source: 'CBP CROSS (official)', url: `https://rulings.cbp.gov/search?term=${encodeURIComponent(q)}`, rulings: list });
+  } catch (e) { json(res, 502, { error: String(e.message || e), url: `https://rulings.cbp.gov/search?term=${encodeURIComponent(q)}` }); }
+}
 
 /* ------------------------------------------------------------------
    Official tariff lookups (free, no key):
