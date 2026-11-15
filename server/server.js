@@ -44,6 +44,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/analyze') return analyze(req, res);
     if (req.method === 'GET' && url.pathname === '/api/tariff') return tariff(url, res);
     if (req.method === 'POST' && url.pathname === '/api/assess') return assess(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/chat') return chatIntent(req, res);
     if (req.method === 'GET' && url.pathname === '/api/measures') return measures(url, res);
     if (req.method === 'GET' && url.pathname === '/api/rulings') return rulings(url, res);
     if (req.method === 'GET' && url.pathname === '/api/kb') return json(res, 200, kb.status());
@@ -267,6 +268,26 @@ async function assess(req, res) {
   if (!parsed) return json(res, 502, { error: 'Could not parse the assessment', raw: text.slice(0, 2000) });
   const seen = new Set(); const uniq = sources.filter(x => !seen.has(x.url) && seen.add(x.url)).slice(0, 25);
   json(res, 200, { simulated: false, assessment: parsed, sources: uniq, model: MODEL, at: new Date().toISOString(), searched: !!body.tools });
+}
+
+/* ------------------------------------------------------------------
+   Chat intent extraction — small, fast, structured. The browser does the rest with local data.
+   ------------------------------------------------------------------ */
+async function chatIntent(req, res) {
+  const b = (await readJson(req)) || {};
+  if (!API_KEY) return json(res, 200, { simulated: true });
+  const prompt = `Classify this message from a small importer using a shipment-compliance app, and extract entities. Known products: ${JSON.stringify((b.products || []).slice(0, 50))}. Known shipment ids: ${JSON.stringify((b.shipments || []).slice(0, 50))}.
+Message: """${String(b.text || '').slice(0, 1000)}"""
+Return JSON only: {"intent":"check|status|followups|deadlines|file|cost|find|help","desc":"product description if any","origin":"ISO2 country of manufacture if stated","dest":"US|CA|EU|UK|CN if stated","mode":"Ocean|Air|Express if stated","units":number|null,"value":number|null,"productName":"matching known product name or null","shipmentId":"matching known id or null"}`;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-5-5', max_tokens: 300, temperature: 0, messages: [{ role: 'user', content: prompt }] }) });
+    if (!r.ok) return json(res, 200, { simulated: true });
+    const data = await r.json(); const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+    const j = extractJson(text); if (!j) return json(res, 200, { simulated: true });
+    const out = { intent: j.intent || 'help', desc: j.desc || undefined, origin: j.origin || undefined, dest: j.dest || undefined, mode: j.mode || undefined, units: j.units || undefined, value: j.value || undefined };
+    if (j.productName) out.productName = j.productName; if (j.shipmentId) out.shipmentId = j.shipmentId;
+    json(res, 200, out);
+  } catch (e) { json(res, 200, { simulated: true }); }
 }
 
 /* ------------------------------------------------------------------

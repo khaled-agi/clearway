@@ -129,9 +129,9 @@ function docIssues(s){return openB(s).filter(b=>DOC_KINDS.has(b.kind));}
    Routing + shell
    ===================================================================== */
 const ROLES=[['Importer','You own the product record and the entry; you decide what ships.'],['Factory','You produce the goods, the documents and the labels.'],['Forwarder','You book the cargo, file ISF/ENS data, issue the BL.'],['Broker','You classify, file the entry and talk to customs.']];
-const NAV=[['overview','Home',icon('home')],['shipments','Shipments',icon('box')],['products','Products',icon('grid')],['settings','Settings',icon('gear')]];
+const NAV=[['chat','Ask ClearWay',icon('chat')],['overview','Work queue',icon('home')],['shipments','Shipments',icon('box')],['products','Products',icon('grid')],['settings','Settings',icon('gear')]];
 const NAV_MORE=[['partners','Partners',icon('people')],['documents','Documents',icon('doc')],['rules','Compliance rules',icon('shield')],['kb','Knowledge base',icon('book')],['rates','Rates & fees',icon('rates')],['how','How it works',icon('help')]];
-function icon(n){const p={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',doc:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',people:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 2 5 5"/>',book:'<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/>',rates:'<path d="M12 2v20M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 3 5 3 5 1.1 5 3-2.2 3-5 3-5-1.1-5-3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/>'}[n];
+function icon(n){const p={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',doc:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',people:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c3 0 5 2 5 5"/>',chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/>',book:'<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/>',rates:'<path d="M12 2v20M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 3 5 3 5 1.1 5 3-2.2 3-5 3-5-1.1-5-3"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z"/>'}[n];
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;}
 
 function renderNav(active){
@@ -141,10 +141,11 @@ function renderNav(active){
   const role=S.settings.role||'Importer';$('#role').innerHTML=`<div class="role-l">I am the…</div><div class="seg vert">${ROLES.map(r=>`<button class="${role===r[0]?'active':''}" onclick="S.settings.role='${r[0]}';save();route()">${r[0]}</button>`).join('')}</div><div class="muted" style="font-size:11px;margin-top:6px">${esc(ROLES.find(r=>r[0]===role)[1])}</div>`;
 }
 function route(){
-  const h=(location.hash||'#overview').slice(1);
+  const h=(location.hash||'#chat').slice(1);
   renderNav(h); window.scrollTo(0,0);
-  const v=$('#view');
-  if(h==='overview')v.innerHTML=pageOverview();
+  const v=$('#view'); v.classList.toggle('is-chat',h==='chat');
+  if(h==='chat')v.innerHTML=pageChat();
+  else if(h==='overview')v.innerHTML=pageOverview();
   else if(h==='shipments')v.innerHTML=pageShipments();
   else if(h.startsWith('shipment-'))v.innerHTML=pageShipment(h.slice(9));
   else if(h==='products')v.innerHTML=pageProducts();
@@ -157,8 +158,9 @@ function route(){
   else if(h.startsWith('rates'))v.innerHTML=pageRates(h.startsWith('rates-')?h.slice(6):null);
   else if(h==='how')v.innerHTML=pageHow();
   else if(h==='kb')v.innerHTML=pageKB();
-  else v.innerHTML=pageOverview();
+  else v.innerHTML=pageChat();
   bind(v);
+  if(h==='chat'){const el=$('#chatScroll');if(el)el.scrollTop=el.scrollHeight;const i=$('#chatIn');if(i&&!document.activeElement.closest('.modal'))i.focus();}
 }
 window.addEventListener('hashchange',route);
 document.addEventListener('click',e=>{const el=e.target.closest('#account [data-act]');if(el&&ACTIONS[el.dataset.act])ACTIONS[el.dataset.act](el.dataset,el);});
@@ -202,7 +204,7 @@ function pageWelcome(){
     <div class="ob">
       <a class="ob-step ${co?'done':''}" href="#settings"><span class="n">${co?'✓':'1'}</span><div><b>Tell us who the importer is</b><span>Your company name and customs ID (EIN / EORI / BN). It goes on every document.</span></div><span class="go">Settings →</span></a>
       <a class="ob-step" href="#products" onclick="setTimeout(()=>ACTIONS.addProduct(),50)"><span class="n">2</span><div><b>Add your first product</b><span>Describe it in plain words, pick a category. We work out the rules and the tariff code.</span></div><span class="go">Add product →</span></a>
-      <a class="ob-step" href="#overview" onclick="event.preventDefault();ACTIONS.new({})"><span class="n">3</span><div><b>Check a shipment</b><span>Drop the invoice, packing list and bill of lading. Get a readiness score and a fix list in a minute.</span></div><span class="go">New shipment →</span></a>
+      <a class="ob-step" href="#chat" onclick="event.preventDefault();ACTIONS.new({})"><span class="n">3</span><div><b>Check a shipment</b><span>Drop the invoice, packing list and bill of lading. Get a readiness score and a fix list in a minute.</span></div><span class="go">New shipment →</span></a>
     </div>
     <div class="ob-alt">Just exploring? <button class="btn" data-act="reset">Load sample data</button> <span class="muted">— nine example shipments you can delete later.</span> &nbsp; <a href="#how">How ClearWay works →</a></div>
   </div>`;
@@ -723,7 +725,7 @@ async function enterWorkspace(user,company){
   ME=user;MODE='server';
   try{const r=await fetch('/api/state');const j=await r.json();WS=j.workspace;S=j.state||emptyState();if(!S.settings)S.settings=emptyState().settings;if(company&&!S.settings.company)S.settings.company=company;if(!S.settings.company&&WS&&WS.name)S.settings.company=WS.name;if(!S.settings.role)S.settings.role=user.role||'Importer';}
   catch(e){S=emptyState();}
-  Object.assign(COSTS,S.costs||{});save();if(!location.hash||location.hash==='#')location.hash='#overview';route();
+  Object.assign(COSTS,S.costs||{});save();if(!location.hash||location.hash==='#')location.hash='#chat';route();
 }
 (async()=>{
   let health=null;try{const r=await fetch('/api/health');health=await r.json();}catch(e){}
@@ -775,7 +777,10 @@ function pageDocPack(id){
   ${pageHead('Document pack · '+s.dest,`Everything the destination needs, prefilled from the product record, your settings and the extracted documents. <b>${missing} required field${missing===1?'':'s'} still missing</b> — fill them in Settings or on the product, or send the pack to the factory to complete.`,`<button class="btn" data-act="copyPack" data-id="${s.id}">Copy all as text</button><button class="btn" onclick="window.print()">Print / save PDF</button>`)}
   <div class="docnav">${docs.map(d=>`<a href="#docs-${s.id}" onclick="event.preventDefault();document.getElementById('d-${d.id}').scrollIntoView({behavior:'smooth'})">${esc(d.title)}</a>`).join('')}</div>
   ${docs.map(d=>{const miss=d.rows.filter(r=>r[2]&&!r[1]).length;return `<section class="card sheet" id="d-${d.id}"><div class="card-h"><div><h2>${esc(d.title)}</h2><div class="muted" style="font-size:12px">${esc(d.who)}</div></div>${miss?pill('warn',miss+' missing'):pill('good','complete')}</div><p class="p muted" style="padding:0 18px">${esc(d.why)}</p><table class="matrix"><tbody>${d.rows.map(r=>docField(r[0],r[1],r[2],r[3])).join('')}</tbody></table></section>`;}).join('')}
-  <p class="muted p">* required. These are data sheets your broker and factory can work from — they are not the official forms themselves. Your broker files the actual entry.</p>`;
+  <section class="card"><div class="card-h"><h2>File it — where each form goes</h2><span class="hint">ClearWay prepares the fields; the named party submits</span></div>
+    ${filingFor(s.dest,attrsOf(p),s.mode).map(f=>`<div class="file-card" style="margin:0 18px 10px"><b>${esc(f.form)}</b><div class="muted">When: ${esc(f.when)} · Who submits: ${esc(f.who)}</div><div style="margin-top:6px;font-size:12.5px">Fields: ${f.fields.map(esc).join(' · ')}</div><div style="margin-top:6px"><a class="btn sm" href="${f.portal}" target="_blank" rel="noopener">${esc(f.portalName)} ↗</a></div></div>`).join('')}
+    <p class="muted p" style="padding:0 18px 16px;font-size:12px">Customs entries are submitted by a licensed customs broker or through your own government account (ACE, CARM, national EU systems, CDS, China Single Window). ClearWay does not file on your behalf; it makes sure what gets filed is complete and consistent.</p></section>
+  <p class="muted p">* required. These are data sheets your broker and factory can work from — they are not the official forms themselves.</p>`;
 }
 ACTIONS.copyPack=(d)=>{const s=S.shipments.find(x=>x.id===d.id);const txt=docPack(s).map(doc=>`== ${doc.title} ==\n${doc.who}\n${doc.rows.map(r=>`${r[0]}${r[2]?' *':''}: ${r[1]||'MISSING'}`).join('\n')}`).join('\n\n');copy(txt);};
 
